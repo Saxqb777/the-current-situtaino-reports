@@ -35,6 +35,9 @@ interface Props {
   peek?: boolean;
   /** Phone: opens the briefing builder from the Log's title bar. */
   onBriefing?(): void;
+  /** What the Log shows for a ship picked in the search. */
+  note?: string | null;
+  onClearSearch?(): void;
 }
 
 export default function Log(p: Props) {
@@ -94,8 +97,8 @@ export default function Log(p: Props) {
             className="filters__search"
             type="search"
             enterKeyHint="search"
-            placeholder="Search ships, ports, carriers"
-            aria-label="Search the log"
+            placeholder="Search reports, ships, ports"
+            aria-label="Search the reports"
             value={filters.query}
             onChange={(e) => setFilters({ ...filters, query: e.target.value })}
           />
@@ -147,6 +150,13 @@ export default function Log(p: Props) {
         )}
       </div>
 
+      {p.note && (
+        <p className="log__note" role="status">
+          <span>{p.note}</span>
+          {p.onClearSearch && <button className="tool" onClick={p.onClearSearch}>Clear search</button>}
+        </p>
+      )}
+
       <ol className="log__list" ref={listRef}>
         {events.length === 0 && (
           <li className="empty">
@@ -166,8 +176,8 @@ export default function Log(p: Props) {
               </>
             ) : (
               <>
-                <h3>Nothing matches these filters</h3>
-                <p>{p.total} reports are hidden. Clear the zone or level filter to see them.</p>
+                <h3>{p.note ? "No reports to show" : "Nothing matches these filters"}</h3>
+                <p>{p.total} reports are hidden. Clear the {filters.query.trim() ? "search, " : ""}zone or level filter to see them.</p>
               </>
             )}
           </li>

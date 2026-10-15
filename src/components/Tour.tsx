@@ -80,6 +80,12 @@ const STEPS: Step[] = [
     },
   },
   {
+    id: "search",
+    target: "search",
+    title: "Find a ship",
+    body: "Type a ship's name to find it on the chart. Pick it and the Log shows the reports that name it, or the reports from the waters it is in when none do. Ports work the same way.",
+  },
+  {
     id: "layers",
     target: "layers",
     title: "Chart layers",

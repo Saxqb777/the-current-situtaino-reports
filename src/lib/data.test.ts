@@ -6,6 +6,8 @@ import { store } from "./store";
 import { type CongestionDoc, type TerminalReading, daysShort, daysWord, diffShort, indexLevel, isLonger, portFigures, portWait } from "./waits";
 import type { ZoneSummary } from "./types";
 import { gstDate, gstHour, gstLongDate, gstMidnight, gstTime } from "./ui";
+import type { VesselLite } from "./client";
+import { findOnChart, namesShip } from "./search";
 import { bottomLine, changesSince, verdict, verdictText, worstLevel } from "./verdict";
 import { latestPerShip, spacing } from "./westgulf";
 
@@ -268,5 +270,44 @@ describe("Dubai time", () => {
   it("finds midnight in Dubai", () => {
     expect(new Date(gstMidnight(Date.UTC(2026, 9, 15, 10))).toISOString()).toBe("2026-10-14T20:00:00.000Z");
     expect(new Date(gstMidnight(Date.UTC(2026, 9, 15, 21))).toISOString()).toBe("2026-10-15T20:00:00.000Z");
+  });
+});
+
+describe("Chart search", () => {
+  const ship = (id: string, name: string, extra: Partial<VesselLite> = {}): VesselLite => ({
+    id, name, lon: 56.4, lat: 26.4, course: 0, sog: 10, group: "cargo", category: "cargo", dark: false, unifeeder: false, moving: true,
+    commercial: true, ageMin: 5, destination: "", flag: "PA", type: "Container Ship", length: 200, dwt: 30000, source: "hormuz", ...extra,
+  });
+  const fleet = [
+    ship("h1", "NAUTILUS I"),
+    ship("h2", "MAERSK EDIRNE"),
+    ship("h3", "SEA NAUTILUS"),
+    ship("m636012345", "ADA", { source: "westGulf" }),
+    ship("h4", "Unnamed"),
+    ship("h5", "UNIFEEDER CARMEN", { unifeeder: true }),
+  ];
+
+  it("puts names that start with the search before names that only contain it", () => {
+    expect(findOnChart("nautilus", fleet).ships.map((v) => v.name)).toEqual(["NAUTILUS I", "SEA NAUTILUS"]);
+    expect(findOnChart("edirne", fleet).ships.map((v) => v.name)).toEqual(["MAERSK EDIRNE"]);
+  });
+
+  it("finds a ship by MMSI, lists Unifeeder's ships, and skips unnamed ones", () => {
+    expect(findOnChart("636012", fleet).ships.map((v) => v.name)).toEqual(["ADA"]);
+    expect(findOnChart("unifeeder", fleet).ships.map((v) => v.name)).toEqual(["UNIFEEDER CARMEN"]);
+    expect(findOnChart("unn", fleet).ships).toEqual([]);
+    expect(findOnChart("n", fleet).ships).toEqual([]);
+  });
+
+  it("finds ports by name or another name for them", () => {
+    expect(findOnChart("jebel", fleet).ports.map((p) => p.id)).toEqual(["jebel-ali"]);
+    expect(findOnChart("sharjah port", fleet).ports.map((p) => p.id)).toEqual(["khalid"]);
+  });
+
+  it("only counts a report as naming a ship when the whole name is there", () => {
+    expect(namesShip("Tanker NAUTILUS I seized off Fujairah", "NAUTILUS I")).toBe(true);
+    expect(namesShip("Tanker Nautilus Island seized", "NAUTILUS I")).toBe(false);
+    expect(namesShip("Port of Adana reopens", "ADA")).toBe(false);
+    expect(namesShip("Bulk carrier ADA hit", "ADA")).toBe(true);
   });
 });

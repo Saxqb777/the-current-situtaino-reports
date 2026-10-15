@@ -48,6 +48,14 @@ export interface Model {
 
   filters: LogFilters;
   setFilters(f: LogFilters): void;
+  /** Sets the shared search: typed text, or a picked ship's or port's name; `wide` clears the zone filter. */
+  search(query: string, ship?: VesselLite | null, wide?: boolean): void;
+  /** The ship picked in the search, while the search still holds its name. */
+  searchShip: VesselLite | null;
+  /** Reports whose text has the search in it, or that name the picked ship. */
+  searchCount: number;
+  /** What the Log is showing for a picked ship, when that needs saying. */
+  searchNote: string | null;
   /** Filters to a zone and flies there; `inset` keeps the flight clear of a phone sheet. */
   focusZone(zone: ZoneId | null, inset?: number): void;
   asOf: number | null;

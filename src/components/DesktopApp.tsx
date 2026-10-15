@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import { ZONE_BY_ID } from "@/lib/geo";
+import { PORT_BY_ID, ZONE_BY_ID } from "@/lib/geo";
 import { SEVERITY_META, gstDate, gstTime } from "@/lib/ui";
 import DetailCard from "./DetailCard";
 import ExportDialog from "./ExportDialog";
@@ -14,6 +14,7 @@ import HormuzPage from "./pages/HormuzPage";
 import NowPage from "./pages/NowPage";
 import PortsPage from "./pages/PortsPage";
 import Scrubber from "./Scrubber";
+import ShipSearch from "./ShipSearch";
 import Tour from "./Tour";
 import WatchStrip from "./WatchStrip";
 import { TourIcon } from "./phone/icons";
@@ -102,6 +103,15 @@ export default function DesktopApp({ m }: { m: Model }) {
         onSelect={(sel) => m.select(sel)}
         onHoverEvent={m.setHover}
       >
+        <ShipSearch
+          query={m.filters.query}
+          vessels={m.vessels}
+          reports={m.searchCount}
+          onQuery={(q) => m.search(q)}
+          onShip={(v) => { m.search(v.name, v, true); m.select({ kind: "vessel", id: v.id }); }}
+          onPort={(id) => { m.search(PORT_BY_ID[id].name, null, true); m.select({ kind: "port", id }); }}
+          onClear={() => { m.search(""); if (m.selection?.kind === "vessel" || m.selection?.kind === "port") m.select(null); }}
+        />
         <Legend layers={m.layers} setLayers={m.setLayers} counts={m.counts} feeds={m.feeds} now={m.now} foldable />
         <DetailCard selection={m.selection} events={snap.events} vessels={m.vessels} detail={m.shipDetail} hz={m.hz} onSelect={(sel) => m.select(sel)} onClose={() => m.select(null)} />
         <Flash m={m} />
@@ -126,6 +136,8 @@ export default function DesktopApp({ m }: { m: Model }) {
         sources={snap.sources}
         onSelect={(id) => m.select({ kind: "event", id })}
         onHover={m.setHover}
+        note={m.searchNote}
+        onClearSearch={() => m.search("")}
       />
 
       {!onMap && (

@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Selection } from "@/lib/client";
+import { PORT_BY_ID } from "@/lib/geo";
 import type { ZoneId } from "@/lib/types";
 import { gstDate, gstTime } from "@/lib/ui";
 import BriefingForm from "../BriefingForm";
@@ -15,6 +16,7 @@ import HormuzPage from "../pages/HormuzPage";
 import NowPage from "../pages/NowPage";
 import PortsPage from "../pages/PortsPage";
 import Scrubber from "../Scrubber";
+import ShipSearch from "../ShipSearch";
 import Tour from "../Tour";
 import Sheet, { type Snap } from "./Sheet";
 import ZoneRail from "./ZoneRail";
@@ -206,6 +208,8 @@ export default function PhoneApp({ m }: { m: Model }) {
           onSelect={(id) => showDetail({ kind: "event", id })}
           onHover={m.setHover}
           onBriefing={() => open("briefing", "full")}
+          note={m.searchNote}
+          onClearSearch={() => m.search("")}
         />
       );
   }
@@ -266,6 +270,16 @@ export default function PhoneApp({ m }: { m: Model }) {
             onHoverEvent={m.setHover}
           >
             <Flash m={m} onOpen={(id) => showDetail({ kind: "event", id })} />
+            <ShipSearch
+              query={m.filters.query}
+              vessels={m.vessels}
+              reports={m.searchCount}
+              onQuery={(q) => m.search(q)}
+              onShip={(v) => { m.search(v.name, v, true); showDetail({ kind: "vessel", id: v.id }); }}
+              onPort={(id) => { m.search(PORT_BY_ID[id].name, null, true); showDetail({ kind: "port", id }); }}
+              onReports={() => open("log", "full")}
+              onClear={() => { m.search(""); if (panel === "detail") closeDetail(); }}
+            />
             <div className="mapdock">
               <div className="mapctl" role="group" aria-label="Chart controls">
                 <button data-tour="layers" aria-label="Chart layers" aria-pressed={panel === "layers"} onClick={() => (panel === "layers" ? open("log", "peek") : open("layers", "half"))}><LayersIcon /></button>

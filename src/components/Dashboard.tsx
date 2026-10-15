@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PORTS, PORT_BY_ID, zoneAt } from "@/lib/geo";
-import type { Layers, Selection } from "@/lib/client";
+import { PORTS, PORT_BY_ID, ZONE_BY_ID, zoneAt } from "@/lib/geo";
+import type { Layers, Selection, VesselLite } from "@/lib/client";
 import { useHormuz, useLiveData, useMedia, usePref, useShipDetail } from "@/lib/hooks";
+import { namesShip } from "@/lib/search";
 import type { ZoneId } from "@/lib/types";
 import { SEVERITIES } from "@/lib/types";
 import type { ChartHandle } from "./ChartMap";
@@ -25,6 +26,8 @@ export default function Dashboard() {
 
   const [filters, setFiltersState] = useState<LogFilters>({ zone: null, minSeverity: "low", officialOnly: false, query: "" });
   const [asOf, setAsOf] = useState<number | null>(null);
+  // The ship last picked in the search; it leads the Log while the search still holds its name.
+  const [searchShip, setSearchShip] = useState<VesselLite | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -76,16 +79,40 @@ export default function Dashboard() {
     () => (asOf ? snap.events.filter((e) => Date.parse(e.firstSeen) <= asOf) : snap.events),
     [snap.events, asOf],
   );
-  const shown = useMemo(() => {
+  // The live position, so the Log follows the ship into the next waters.
+  const shipFocus = useMemo(
+    () => (searchShip && filters.query === searchShip.name ? vessels.find((v) => v.id === searchShip.id) ?? searchShip : null),
+    [searchShip, filters.query, vessels],
+  );
+  const { shown, searchCount, searchNote } = useMemo(() => {
     const min = SEVERITIES.indexOf(filters.minSeverity);
     const q = filters.query.trim().toLowerCase();
-    return timeEvents.filter((e) =>
+    const text = (e: (typeof timeEvents)[number]) =>
+      `${e.title} ${e.summary} ${e.sources.map((s) => s.publisher ?? s.name).join(" ")} ${e.ports.map((p) => PORT_BY_ID[p].name).join(" ")}`;
+    const kept = timeEvents.filter((e) =>
       (!filters.zone || e.zones.includes(filters.zone)) &&
       SEVERITIES.indexOf(e.severity) >= min &&
-      (!filters.officialOnly || e.official) &&
-      (!q || `${e.title} ${e.summary} ${e.sources.map((s) => s.publisher ?? s.name).join(" ")} ${e.ports.map((p) => PORT_BY_ID[p].name).join(" ")}`.toLowerCase().includes(q)),
+      (!filters.officialOnly || e.official),
     );
-  }, [timeEvents, filters]);
+    const matching = q ? kept.filter((e) => text(e).toLowerCase().includes(q)) : kept;
+    if (!shipFocus) return { shown: matching, searchCount: matching.length, searchNote: null };
+    // A picked ship: the reports that name it; when none do, the reports from the waters it is in now.
+    const named = kept.filter((e) => namesShip(text(e), shipFocus.name));
+    if (named.length) return { shown: named, searchCount: named.length, searchNote: `Reports naming ${shipFocus.name}` };
+    const z = zoneAt([shipFocus.lon, shipFocus.lat]);
+    if (!z) return { shown: [], searchCount: 0, searchNote: `No report names ${shipFocus.name}.` };
+    return {
+      shown: kept.filter((e) => e.zones.includes(z)),
+      searchCount: 0,
+      searchNote: `No report names ${shipFocus.name}. Showing reports from ${ZONE_BY_ID[z].name}, where it is now.`,
+    };
+  }, [timeEvents, filters, shipFocus]);
+
+  // Typing searches the reports; a picked ship or port also clears the zone so its reports are not hidden.
+  const search = useCallback((query: string, ship: VesselLite | null = null, wide = false) => {
+    setSearchShip(ship);
+    setFiltersState((f) => ({ ...f, query, zone: wide ? null : f.zone }));
+  }, []);
 
   const select = useCallback((sel: Selection, inset?: number) => {
     setSelection(sel);
@@ -148,6 +175,10 @@ export default function Dashboard() {
     aisLive: vessels.length > 0,
     filters,
     setFilters,
+    search,
+    searchShip: shipFocus,
+    searchCount,
+    searchNote,
     focusZone,
     asOf,
     setAsOf,
