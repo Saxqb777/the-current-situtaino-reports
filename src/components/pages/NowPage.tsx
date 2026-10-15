@@ -6,7 +6,7 @@ import { PORTWATCH_PORT, callsBand } from "@/lib/portwatch";
 import { SEVERITIES, type Severity, type ZoneId, type ZoneSummary } from "@/lib/types";
 import { SEVERITY_META, ZONE_ORDER, ago, agoMin, sourceLine, utcDate, utcTime } from "@/lib/ui";
 import { type Seen, bottomLine, verdict, worstLevel } from "@/lib/verdict";
-import { LEVEL_WORD, allWaits, daysShort } from "@/lib/waits";
+import { LEVEL_WORD, allWaits, daysShort, gccWaits } from "@/lib/waits";
 import type { Go, Model } from "../model";
 import Newsroom from "../Newsroom";
 import RouteIn from "../RouteIn";
@@ -43,17 +43,17 @@ export default function NowPage({ m, go }: { m: Model; go: Go }) {
   const clock = new Date(now).toISOString();
   const [portsBy, setPortsBy] = useState<"waits" | "calls">("waits");
 
-  const waits = useMemo(() => allWaits(PORTS.map((p) => p.id), m.hz?.congestion, m.hz?.areas, now), [m.hz?.congestion, m.hz?.areas, now]);
-  const withDays = Object.values(waits).filter((w) => w.days !== null);
-  const longest = [...withDays].sort((a, b) => (b.days ?? 0) - (a.days ?? 0)).slice(0, 6);
-  const longer = withDays.filter((w) => w.level === "high" || w.level === "elevated").length;
+  const waits = useMemo(() => allWaits(PORTS.map((p) => p.id), m.hz?.congestion, m.hz?.areas), [m.hz?.congestion, m.hz?.areas]);
+  const withDays = useMemo(() => gccWaits(m.hz?.congestion, m.hz?.areas).filter((w) => w.days !== null), [m.hz?.congestion, m.hz?.areas]);
+  const longest = [...withDays].sort((a, b) => (b.days ?? 0) - (a.days ?? 0) || (b.index ?? 0) - (a.index ?? 0)).slice(0, 6);
+  const longer = withDays.filter((w) => w.longer).length;
   const showWaits = portsBy === "waits" && longest.length > 0;
 
   const headline = verdict(zones, st ? st.pct : null);
   const bottom = bottomLine({
     zones,
     strait: st ? { ais7: st.ais7, baseline: st.baseline, waiting } : null,
-    waits: withDays.map((w) => ({ name: PORT_BY_ID[w.id]?.name ?? w.id, days: w.days!, longer: w.level === "high" || w.level === "elevated" })),
+    waits: withDays.map((w) => ({ name: PORT_BY_ID[w.id]?.name ?? w.id, days: w.days!, longer: w.longer })),
   });
   const seen = useMemo<Seen | null>(
     () => (m.now && m.snap.lastRefresh ? { t: m.now, levels: Object.fromEntries(zones.map((z) => [z.zone, z.level])), serious: hot24.map((e) => e.id) } : null),
@@ -105,7 +105,7 @@ export default function NowPage({ m, go }: { m: Model; go: Go }) {
           foot={traffic ? <>Last 24 h · <Delta now={traffic.windows.last24h.total} before={traffic.windows.prev24h.total} word="on the day before" /></> : s ? `${s.last24h.in} in · ${s.last24h.out} out` : null}
         />
         {withDays.length > 0 ? (
-          <Kpi label="Ports waiting longer" value={<CountUp value={longer} />} tone={longer ? "warn" : "ok"} foot={`of ${withDays.length} ports, last full week`} />
+          <Kpi label="Ports waiting longer" value={<CountUp value={longer} />} tone={longer ? "warn" : "ok"} foot={`of ${withDays.length} GCC ports, now`} />
         ) : (
           <Kpi label="Waiting at anchor" value={<CountUp value={waiting} />} foot={s ? `${s.fleet.waitingGulf} Gulf side · ${s.fleet.waitingOman} Oman side` : null} />
         )}
@@ -117,7 +117,7 @@ export default function NowPage({ m, go }: { m: Model; go: Go }) {
         </Section>
 
         {(longest.length > 0 || hardest.length > 0) && (
-          <Section n="02" title="Ports to watch" sub={showWaits ? "Typical wait at anchor last full week, against usual" : "Port calls now, as a share of before the crisis"}>
+          <Section n="02" title="Ports to watch" sub={showWaits ? "How long ships queuing at the container terminals have waited, against usual" : "Port calls now, as a share of before the crisis"}>
             {longest.length > 0 && hardest.length > 0 && (
               <div className="seg seg--page" role="tablist" aria-label="Rank ports by">
                 <button role="tab" aria-selected={portsBy === "waits"} aria-pressed={portsBy === "waits"} onClick={() => setPortsBy("waits")}>Longest waits</button>
@@ -129,7 +129,7 @@ export default function NowPage({ m, go }: { m: Model; go: Go }) {
                 ? longest.map((w) => (
                   <li key={w.id}>
                     <button className="pulse__row" onClick={() => go.select({ kind: "port", id: w.id })}>
-                      <span className="pulse__name">{PORT_BY_ID[w.id]?.name}<small>{PORT_BY_ID[w.id]?.country} · {w.level ? LEVEL_WORD[w.level].toLowerCase() : ""}</small></span>
+                      <span className="pulse__name">{PORT_BY_ID[w.id]?.name}<small>{PORT_BY_ID[w.id]?.country}{w.level ? ` · ${LEVEL_WORD[w.level].toLowerCase()}` : ""}</small></span>
                       <span className="pulse__bar" data-level={w.level ?? "none"}>
                         <i style={{ width: `${Math.min(100, ((w.days ?? 0) / 7) * 100)}%` }} />
                         {w.typical !== null && <em aria-hidden="true" style={{ left: `${Math.min(100, (w.typical / 7) * 100)}%` }} />}
@@ -188,6 +188,7 @@ export default function NowPage({ m, go }: { m: Model; go: Go }) {
           <b>Strait and port figures</b> hormuz.now (CC BY 4.0), with port calls from IMF PortWatch.
           {s && <> Feed {s.feed.health}, updated {agoMin(Math.max(0, (now - s.generatedAt) / 60_000))}.</>}
         </p>
+        {withDays.length > 0 && <p><b>Port waits</b> Kpler container-terminal congestion at {withDays.length} GCC ports, read every hour.</p>}
         <p>
           <b>Ships</b> {m.feeds ? `${m.feeds.hormuz.ships.toLocaleString("en-GB")} around Hormuz from hormuz.now, ${m.feeds.westGulf.ships} in the west Gulf from VesselAPI.` : "Loading."} No free feed reaches the Red Sea, Gulf of Aden or Somali coast yet.
         </p>

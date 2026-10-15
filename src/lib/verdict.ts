@@ -85,7 +85,7 @@ export interface BottomLine {
 export interface BottomInput {
   zones: ZoneSummary[];
   strait: { ais7: number; baseline: number; waiting: number | null } | null;
-  /** Ports with a weekly wait, any order. */
+  /** GCC ports with a wait now (0 when none are queuing), any order. */
   waits: { name: string; days: number; longer: boolean }[];
 }
 
@@ -108,8 +108,10 @@ export function bottomLine({ zones, strait, waits }: BottomInput): BottomLine[] 
   if (waits.length) {
     const longer = waits.filter((w) => w.longer).length;
     const top = [...waits].sort((a, b) => b.days - a.days)[0];
-    const d = top.days < 1 ? `${Math.max(1, Math.round(top.days * 24))} hours` : `${top.days.toFixed(1)} days`;
-    out.push({ label: "Ports", text: `${longer} of ${waits.length} have longer waits than usual. The longest is ${top.name}, at ${d}.` });
+    const h = Math.max(1, Math.round(top.days * 24));
+    const d = top.days < 1 ? `${h} ${h === 1 ? "hour" : "hours"}` : `${top.days.toFixed(1)} days`;
+    const tail = top.days > 0 ? ` The longest is ${top.name}, at ${d}.` : " No ships are queuing for a berth.";
+    out.push({ label: "Ports", text: `${longer} of ${waits.length} have longer waits than usual.${tail}` });
   }
   return out;
 }

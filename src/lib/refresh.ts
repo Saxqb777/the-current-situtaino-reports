@@ -71,7 +71,7 @@ async function refreshShips(apiKey: string) {
 
 /**
  * Reads every news source, samples the ship feed and, when its turn has
- * come, takes a west-Gulf ship picture and asks about a few ports' waits; once per STALE_MS at most, however many visitors or timers ask for it at the same time.
+ * come, takes a west-Gulf ship picture and reads the GCC ports' waits (hourly); once per STALE_MS at most, however many visitors or timers ask for it at the same time.
  */
 export async function refresh(): Promise<RefreshResult> {
   const s = store();

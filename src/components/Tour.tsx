@@ -128,8 +128,8 @@ const STEPS: Step[] = [
     target: { phone: "tab-ports", desktop: "vtab-ports" },
     title: "Every Gulf port",
     body: {
-      phone: "Every Gulf port: its calls and exports against before the crisis, and how long ships wait to get in. Switch to Waiting times to sort by the longest wait. Tap a port for its history.",
-      desktop: "Every Gulf port: its calls and exports against before the crisis, and how long ships wait to get in. Switch to Waiting times to sort by the longest wait. Click a port for its history.",
+      phone: "Every Gulf port: its calls and exports against before the crisis. Switch to Waiting times for the 16 GCC ports, read every hour: how long ships queue for a berth and how busy each port is. Tap a port for its terminals and history.",
+      desktop: "Every Gulf port: its calls and exports against before the crisis. Switch to Waiting times for the 16 GCC ports, read every hour: how long ships queue for a berth and how busy each port is. Click a port for its terminals and history.",
     },
   },
   {

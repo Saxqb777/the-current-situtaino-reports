@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { niceMax } from "@/components/viz/scale";
-import { readWeeks, weekRanges } from "./congestion";
+import { addHistory, groupUrl, readTerminals, refreshCongestion } from "./congestion";
 import { type HzAreas, readSnapshot } from "./hormuz";
-import { type CongestionDoc, type CongestionWeek, daysShort, daysWord, isoWeek, portWait, waitLevel, weekStart } from "./waits";
+import { store } from "./store";
+import { type CongestionDoc, type TerminalReading, daysShort, daysWord, diffShort, indexLevel, isLonger, portFigures, portWait } from "./waits";
 import type { ZoneSummary } from "./types";
 import { bottomLine, changesSince, verdict, verdictText, worstLevel } from "./verdict";
 import { latestPerShip, spacing } from "./westgulf";
@@ -10,61 +11,71 @@ import { latestPerShip, spacing } from "./westgulf";
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
 
+/** One Kpler page: a congestion item per terminal, with its port and terminal included. */
+function kplerPage(rows: { port: string; code: string; terminal: string; index: number; waiting: number; wait: number; usual: number; carriers?: string[] }[], next?: string) {
+  return {
+    data: rows.map((r) => ({
+      id: `tc-${r.terminal}`,
+      type: "terminal_congestion",
+      attributes: {
+        carriers: (r.carriers ?? []).map((name) => ({ name, scac: "X", services: [] })),
+        liveMetrics: { vesselsStay: 3, lastUpdatedAt: "2026-10-15T09:00:00Z", vesselsWaiting: r.waiting, congestionIndex: r.index, vesselsStayAvgTime: 30, vesselsWaitingAvgTime: r.wait },
+        performanceInsights: { avgStayTime: 28, lastUpdatedAt: "2026-10-15T00:00:00Z", avgWaitingTime: r.usual, performanceIndex: 5 },
+      },
+      relationships: { port: { data: { id: r.port, type: "port" } }, terminal: { data: { id: r.terminal, type: "terminal" } } },
+    })),
+    included: [
+      ...rows.map((r) => ({ id: r.port, type: "port", attributes: { unlocode: r.code, name: r.code, lat: 25, lon: 55 } })),
+      ...rows.map((r) => ({ id: r.terminal, type: "terminal", attributes: { name: `Terminal ${r.terminal}`, lat: 25, lon: 55 } })),
+    ],
+    links: next ? { next } : {},
+  };
+}
+
+const term = (index: number | null, waiting: number | null, waitHours: number | null, usualHours: number | null = 24): TerminalReading =>
+  ({ id: `t${index}${waiting}`, name: "T", index, waiting, waitHours, usualHours, alongside: 2, stayHours: null, usualStayHours: null, carriers: [], at: null });
+
 describe("port waits", () => {
-  it("numbers weeks the ISO way, as MarineTraffic does", () => {
-    expect(isoWeek(Date.UTC(2026, 9, 15))).toEqual({ year: 2026, week: 42 });
-    // 1 January 2027 is a Friday, so it still belongs to the last week of 2026.
-    expect(isoWeek(Date.UTC(2027, 0, 1))).toEqual({ year: 2026, week: 53 });
-    expect(isoWeek(Date.UTC(2027, 0, 4))).toEqual({ year: 2027, week: 1 });
-    expect(weekStart(2026, 42)).toBe("2026-10-12");
-    expect(weekStart(2027, 1)).toBe("2027-01-04");
-  });
-
-  it("asks for the last thirteen weeks, across the new year when needed", () => {
-    expect(weekRanges(Date.UTC(2026, 9, 15))).toEqual([{ year: 2026, from: 30, to: 42 }]);
-    expect(weekRanges(Date.UTC(2027, 0, 13))).toEqual([
-      { year: 2026, from: 43, to: 53 },
-      { year: 2027, from: 1, to: 2 },
+  it("reads Kpler's terminals, grouped by port code, with the lines calling", () => {
+    const read = readTerminals([
+      kplerPage([
+        { port: "102", code: "AEJEA", terminal: "1", index: 5.1, waiting: 4, wait: 57.6, usual: 9, carriers: ["MSC", "Maersk", "MSC"] },
+        { port: "18560", code: "aeklf", terminal: "2", index: 8.4, waiting: 15, wait: 209, usual: 138 },
+      ]),
+      // The same item again on a later page counts once.
+      kplerPage([{ port: "102", code: "AEJEA", terminal: "1", index: 5.1, waiting: 4, wait: 57.6, usual: 9 }]),
     ]);
+    expect(Object.keys(read)).toEqual(["AEJEA", "AEKLF"]);
+    expect(read.AEJEA).toHaveLength(1);
+    expect(read.AEJEA[0]).toMatchObject({ name: "Terminal 1", index: 5.1, waiting: 4, waitHours: 57.6, usualHours: 9, alongside: 3, carriers: ["MSC", "Maersk"] });
+    expect(readTerminals([{}])).toEqual({});
   });
 
-  it("reads MarineTraffic rows as objects or as arrays, skipping rows without a week", () => {
-    const fromObjects = readWeeks([{ PORT_ID: "790", YEAR: "2026", WEEK: "41", TIME_ANCH: "1.25", TIME_PORT: "0.8", VESSELS: "40", CALLS: "52" }]);
-    expect(fromObjects).toEqual([{ year: 2026, week: 41, start: "2026-10-05", anchorDays: 1.25, portDays: 0.8, ships: 40, calls: 52 }]);
-    const fromArrays = readWeeks({ DATA: [[790, 2026, 41, null, null, "", 0.8, 40, 52], [790, null, 40]] });
-    expect(fromArrays).toEqual([{ year: 2026, week: 41, start: "2026-10-05", anchorDays: null, portDays: 0.8, ships: 40, calls: 52 }]);
-    expect(readWeeks(null)).toEqual([]);
+  it("takes the busiest terminal's index and weights the wait by ships queuing, leaving out stale waits", () => {
+    const f = portFigures([term(3, 1, 10), term(8.3, 3, 30), term(6.7, 2, 4301)]);
+    expect(f.index).toBe(8.3);
+    expect(f.waiting).toBe(6);
+    expect(f.waitHours).toBe(25);
+    expect(portFigures([term(2, 0, 50), term(1, 0, null)]).waitHours).toBe(0);
+    expect(portFigures([]).index).toBeNull();
   });
 
-  it("calls a wait congested only when it is both much longer and a day longer than usual", () => {
-    expect(waitLevel(3, 1.5)).toBe("high");
-    expect(waitLevel(0.6, 0.3)).toBe("normal");
-    expect(waitLevel(2.1, 1.5)).toBe("elevated");
-    expect(waitLevel(1.6, 1.5)).toBe("normal");
-    expect(waitLevel(2, null)).toBe("normal");
-    expect(waitLevel(null, 2)).toBeNull();
+  it("grades by index the owner's way and calls a wait longer only when it clearly is", () => {
+    expect([9, 7, 6.9, 4, 3.9, null].map(indexLevel)).toEqual(["high", "high", "elevated", "elevated", "normal", null]);
+    expect(isLonger(8.7, 5.75)).toBe(true);
+    expect(isLonger(0.4, 0.25)).toBe(false);
+    expect(isLonger(2, null)).toBe(false);
   });
 
-  const week = (w: number, anchorDays: number | null, portDays = 1): CongestionWeek =>
-    ({ year: 2026, week: w, start: weekStart(2026, w), anchorDays, portDays, ships: 10, calls: 12 });
-
-  it("compares the newest finished week with the weeks before it, leaving out the week under way", () => {
-    const doc: CongestionDoc = { at: null, ports: { fujairah: { at: "", weeks: [week(42, 9), week(41, 3), week(38, 1), week(39, 1.5), week(40, 2)] } } };
-    const w = portWait("fujairah", doc, null, Date.UTC(2026, 9, 15));
-    expect(w.measure).toBe("anchor");
-    expect(w.latest?.week).toBe(41);
-    expect(w.days).toBe(3);
-    expect(w.typical).toBe(1.5);
-    expect(w.level).toBe("high");
-    expect(w.weeks.map((x) => x.week)).toEqual([38, 39, 40, 41, 42]);
-  });
-
-  it("falls back to days in port where a port has no anchorage figure", () => {
-    const doc: CongestionDoc = { at: null, ports: { aden: { at: "", weeks: [week(40, null, 2), week(41, null, 2.5)] } } };
-    const w = portWait("aden", doc, null, Date.UTC(2026, 9, 15));
-    expect(w.measure).toBe("port");
-    expect(w.days).toBe(2.5);
-    expect(w.typical).toBe(2);
+  it("builds a port's wait from the stored doc and ignores the old weekly shape", () => {
+    const doc: CongestionDoc = { v: 2, at: "2026-10-15T09:00:00Z", ports: { "khor-fakkan": { code: "AEKLF", at: "2026-10-15T09:00:00Z", terminals: [term(8.4, 15, 209, 138)] } }, history: { "khor-fakkan": [[493_000, 8.1, 12, 190]] } };
+    const w = portWait("khor-fakkan", doc, null);
+    expect(w).toMatchObject({ index: 8.4, level: "high", waiting: 15, longer: true, at: "2026-10-15T09:00:00Z" });
+    expect(w.days).toBeCloseTo(209 / 24);
+    expect(w.typical).toBeCloseTo(138 / 24);
+    expect(w.history).toHaveLength(1);
+    const old = { at: null, ports: { fujairah: { at: "", weeks: [] } } } as unknown as CongestionDoc;
+    expect(portWait("fujairah", old, null).terminals).toEqual([]);
   });
 
   it("adds who is waiting off the port now, from hormuz.now", () => {
@@ -72,17 +83,86 @@ describe("port waits", () => {
       areas: [{ id: "dubai", name: "Dubai anchorage", waiting: 30, trend: [20, -1, 25, 30] }],
       waiting: { areas: [{ id: "dubai", name: "Dubai anchorage", count: 31, medianHours: 35, over24h: 12, over7d: 2 }] },
     } as unknown as HzAreas;
-    const w = portWait("jebel-ali", null, areas, Date.UTC(2026, 9, 15));
+    const w = portWait("jebel-ali", null, areas);
     expect(w.days).toBeNull();
     expect(w.live).toMatchObject({ area: "dubai", areaName: "Dubai", waiting: 31, medianHours: 35, trend: [20, 25, 30] });
-    expect(portWait("aden", null, areas, Date.UTC(2026, 9, 15)).live).toBeNull();
+    expect(portWait("aden", null, areas).live).toBeNull();
   });
 
-  it("writes short waits in hours and long ones in days", () => {
+  it("keeps a point every three hours for thirty days", () => {
+    const ports = { sohar: { code: "OMSOH", at: "", terminals: [term(4.2, 2, 12)] } };
+    const t = Date.UTC(2026, 9, 15, 9);
+    const h = t / HOUR;
+    const first = addHistory({ sohar: [[h - 31 * 24, 1, 0, 0]] }, ports, ["sohar"], t);
+    expect(first.sohar).toEqual([[h, 4.2, 2, 12]]);
+    expect(addHistory(first, ports, ["sohar"], t + 2 * HOUR).sohar).toHaveLength(1);
+    expect(addHistory(first, ports, ["sohar"], t + 3 * HOUR).sohar).toHaveLength(2);
+  });
+
+  it("writes short waits in hours, long ones in days, and no queue as such", () => {
     expect(daysWord(0.4)).toBe("10 h");
     expect(daysWord(2.35)).toBe("2.4 days");
+    expect(daysWord(0)).toBe("No queue");
     expect(daysShort(3.6)).toBe("3.6 d");
     expect(daysWord(null)).toBe("–");
+    expect([2.95, -0.25, 0.01, null].map(diffShort)).toEqual(["+3.0 d", "−6 h", "same", "–"]);
+  });
+});
+
+describe("reading Kpler", () => {
+  const key = "test-key";
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.MARINETRAFFIC_API_KEY;
+  });
+
+  it("writes the call exactly as BMB Tracker does", () => {
+    expect(groupUrl(["AEJEA"])).toBe("https://api.kpler.com/v1/logistics/containers/terminal-congestions?filter[port.unlocode][]=AEJEA&include=terminals,ports");
+    expect(groupUrl(["AEJEA", "AEKLF"])).toContain("filter[port.unlocode][]=AEJEA&filter[port.unlocode][]=AEKLF&");
+  });
+
+  it("asks for the sixteen ports five at a time with the key in a header, follows Kpler's next page only, and waits an hour", async () => {
+    process.env.MARINETRAFFIC_API_KEY = ` ${key}\n`;
+    await store().putDoc("congestion", null);
+    const urls: string[] = [];
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      urls.push(url);
+      expect(init.headers).toEqual({ "X-Container-API-Key": key, Accept: "application/json" });
+      expect(url).not.toContain(key);
+      const codes = new URL(url).searchParams.getAll("filter[port.unlocode][]");
+      if (codes.includes("AEJEA") && !url.includes("page=2")) {
+        return Response.json(kplerPage([{ port: "102", code: "AEJEA", terminal: "1", index: 5.1, waiting: 4, wait: 57.6, usual: 9 }], `${url}&page=2`));
+      }
+      if (url.includes("page=2")) return Response.json(kplerPage([{ port: "18560", code: "AEKLF", terminal: "2", index: 8.4, waiting: 15, wait: 209, usual: 138 }], "https://elsewhere.example/steal"));
+      return Response.json({ data: [], included: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const t = Date.UTC(2026, 9, 15, 9);
+    const run = await refreshCongestion(t);
+    expect(run).toMatchObject({ ran: true, calls: 5, ports: 2, terminals: 2 });
+    expect(run.missing).toHaveLength(14);
+    expect(urls.map((u) => new URL(u).searchParams.getAll("filter[port.unlocode][]").length)).toEqual([5, 5, 5, 5, 1]);
+    expect(urls.every((u) => u.startsWith("https://api.kpler.com/"))).toBe(true);
+
+    const doc = await store().doc<CongestionDoc>("congestion");
+    expect(Object.keys(doc!.ports).sort()).toEqual(["jebel-ali", "khor-fakkan"]);
+    expect(doc!.history["khor-fakkan"]).toHaveLength(1);
+    expect(await refreshCongestion(t + 30 * 60_000)).toEqual({ ran: false });
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
+  it("stops at a refused key and keeps the last good figures", async () => {
+    process.env.MARINETRAFFIC_API_KEY = key;
+    const before = await store().doc<CongestionDoc>("congestion");
+    const fetchMock = vi.fn(async () => Response.json({ errors: [{ code: "invalid_api_key", detail: `bad key ${key}` }] }, { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const run = await refreshCongestion(Date.UTC(2026, 9, 15, 10, 5));
+    expect(run).toMatchObject({ ran: true, calls: 0, ports: 0, error: "HTTP 401 invalid_api_key" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const after = await store().doc<CongestionDoc>("congestion");
+    expect(after!.ports).toEqual(before!.ports);
+    expect(JSON.stringify(after)).not.toContain(key);
   });
 });
 
@@ -152,6 +232,12 @@ describe("our verdict", () => {
     expect(lines[0].text).toBe("659 ships are waiting at anchor near the strait. This week 8.9 a day are crossing, against 84.8 before the crisis.");
     expect(lines[1].text).toBe("Bulk carrier struck by missile.");
     expect(lines[2].text).toBe("1 of 2 have longer waits than usual. The longest is Hodeidah, at 6.5 days.");
+  });
+
+  it("says so when no ships are queuing at the ports", () => {
+    const lines = bottomLine({ zones: [], strait: null, waits: [{ name: "Sohar", days: 0, longer: false }, { name: "Dammam", days: 0.04, longer: false }] });
+    expect(lines[0].text).toBe("0 of 2 have longer waits than usual. The longest is Dammam, at 1 hour.");
+    expect(bottomLine({ zones: [], strait: null, waits: [{ name: "Sohar", days: 0, longer: false }] })[0].text).toBe("0 of 1 have longer waits than usual. No ships are queuing for a berth.");
   });
 
   it("lists levels that rose before ones that fell, then new serious reports", () => {

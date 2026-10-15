@@ -1,33 +1,74 @@
 import type { HzAreas } from "./hormuz";
 
 /**
- * Port congestion as the screens show it: how long ships wait, week by week
- * (MarineTraffic), and how many are waiting right now (hormuz.now). Safe to
- * use in the browser; the fetching lives in congestion.ts.
+ * Port congestion as the screens show it: how long ships are queuing at each
+ * GCC port's container terminals right now and how busy the terminals are
+ * (Kpler, read hourly), with how many ships of any kind wait off the port
+ * (hormuz.now). Safe to use in the browser; the fetching lives in
+ * congestion.ts.
  */
 
-/** One ISO week at one port: median days at anchor and in port, and how many ships and calls those medians cover. */
-export interface CongestionWeek {
-  year: number;
-  week: number;
-  /** Monday the week starts, "2026-10-05". */
-  start: string;
-  anchorDays: number | null;
-  portDays: number | null;
-  ships: number | null;
-  calls: number | null;
+/** The GCC ports we ask Kpler about, our id to UN/LOCODE. Container terminals only. */
+export const GCC_PORTS: Record<string, string> = {
+  "jebel-ali": "AEJEA",
+  khalifa: "AEKHL",
+  "khor-fakkan": "AEKLF",
+  fujairah: "AEFJR",
+  khalid: "AESHJ",
+  dammam: "SADMM",
+  jubail: "SAJUB",
+  jeddah: "SAJED",
+  "king-abdullah": "SAKAC",
+  hamad: "QAHMD",
+  "khalifa-bin-salman": "BHKBS",
+  shuwaikh: "KWSWK",
+  shuaiba: "KWSAA",
+  sohar: "OMSOH",
+  salalah: "OMSLL",
+  duqm: "OMDQM",
+};
+
+/** One container terminal's reading. Times are in hours. */
+export interface TerminalReading {
+  id: string;
+  name: string;
+  /** Kpler's congestion index, 0 to 10. */
+  index: number | null;
+  /** Ships queuing for a berth now. */
+  waiting: number | null;
+  /** How long the ships queuing now have waited, on average. */
+  waitHours: number | null;
+  /** The terminal's usual wait. */
+  usualHours: number | null;
+  /** Ships alongside now. */
+  alongside: number | null;
+  stayHours: number | null;
+  usualStayHours: number | null;
+  /** Lines calling, by name. */
+  carriers: string[];
+  /** When Kpler last updated the reading. */
+  at: string | null;
 }
 
-export interface PortCongestionDoc {
-  /** When MarineTraffic was last asked about this port. */
+export interface PortCongestion {
+  /** UN/LOCODE asked about. */
+  code: string;
+  /** When we last read this port. */
   at: string;
-  weeks: CongestionWeek[];
-  error?: string;
+  terminals: TerminalReading[];
 }
+
+/** One point of our own record: hours since 1970, index, ships waiting, average wait in hours. */
+export type HistoryPoint = [hour: number, index: number | null, waiting: number, waitHours: number | null];
 
 export interface CongestionDoc {
+  v: 2;
+  /** When Kpler was last asked. */
   at: string | null;
-  ports: Record<string, PortCongestionDoc>;
+  ports: Record<string, PortCongestion>;
+  /** A point every few hours per port, the last 30 days. */
+  history: Record<string, HistoryPoint[]>;
+  error?: string;
 }
 
 /** Our port id to hormuz.now's anchorage, for ships waiting off it right now. */
@@ -59,52 +100,74 @@ export interface LiveWait {
 
 export interface PortWait {
   id: string;
-  weeks: CongestionWeek[];
-  /** The newest week with a figure. */
-  latest: CongestionWeek | null;
-  /** Days at anchor in the newest week, or days in port where the port has no anchorage figure. */
-  days: number | null;
-  /** What `days` measures. */
-  measure: "anchor" | "port" | null;
-  /** The middle of the weeks before the newest one, for comparison. */
-  typical: number | null;
+  /** The busiest terminal's congestion index, 0 to 10. */
+  index: number | null;
+  /** From the index: 7 or more busy, 4 to 7 moderate, under 4 normal. */
   level: WaitLevel | null;
+  /** Ships queuing at the port's container terminals now. */
+  waiting: number;
+  /** Ships alongside now. */
+  alongside: number | null;
+  /** How long the ships queuing now have waited, in days; 0 when none are queuing. */
+  days: number | null;
+  /** The port's usual wait, in days. */
+  typical: number | null;
+  /** Clearly longer than usual: a quarter longer and six hours more. */
+  longer: boolean;
+  terminals: TerminalReading[];
+  history: HistoryPoint[];
+  /** When we last read the port. */
+  at: string | null;
   live: LiveWait | null;
 }
 
-const median = (xs: number[]): number | null => {
-  if (!xs.length) return null;
-  const s = [...xs].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-};
+/** Waits longer than a month are a terminal's stale record, not a queue; Kpler shows a few. */
+export const MAX_WAIT_HOURS = 720;
 
-/**
- * High when the newest week's wait is half as long again as usual and at
- * least a day longer; elevated when it is a fifth longer and half a day.
- * Small changes on short waits stay normal.
- */
-export function waitLevel(days: number | null, typical: number | null): WaitLevel | null {
-  if (days === null) return null;
-  if (typical === null) return "normal";
-  if (days >= typical * 1.5 && days - typical >= 1) return "high";
-  if (days >= typical * 1.2 && days - typical >= 0.5) return "elevated";
+/** The owner's rule: 7 or more busy, 4 to 7 moderate, under 4 normal. */
+export function indexLevel(index: number | null): WaitLevel | null {
+  if (index === null) return null;
+  if (index >= 7) return "high";
+  if (index >= 4) return "elevated";
   return "normal";
 }
 
-const WEEK_MS = 7 * 86_400_000;
+/** A quarter longer than usual and at least six hours more; small changes on short waits do not count. */
+export function isLonger(days: number | null, typical: number | null): boolean {
+  if (days === null || typical === null) return false;
+  return days >= typical * 1.25 && days - typical >= 0.25;
+}
 
-/** A port's waits: the newest finished week against the weeks before it, and what hormuz.now sees off it now. */
-export function portWait(id: string, doc: CongestionDoc | null | undefined, areas: HzAreas | null | undefined, now: number): PortWait {
-  const weeks = [...(doc?.ports[id]?.weeks ?? [])].sort((a, b) => a.start.localeCompare(b.start));
-  const hasAnchor = weeks.some((w) => w.anchorDays !== null);
-  const measure = weeks.length ? (hasAnchor ? "anchor" : "port") : null;
-  const value = (w: CongestionWeek) => (measure === "anchor" ? w.anchorDays : w.portDays);
-  // The week under way is still filling up; compare finished weeks.
-  const withFigure = weeks.filter((w) => value(w) !== null && Date.parse(w.start) + WEEK_MS <= now);
-  const latest = withFigure.at(-1) ?? null;
-  const days = latest ? value(latest) : null;
-  const typical = median(withFigure.slice(0, -1).map((w) => value(w) as number));
+const sum = (xs: (number | null)[]) => xs.reduce<number>((a, b) => a + (b ?? 0), 0);
+
+/**
+ * A port from its terminals: the busiest terminal's index, ships waiting
+ * summed, and the average wait weighted by how many queue at each terminal.
+ */
+export function portFigures(terminals: TerminalReading[]): { index: number | null; waiting: number; alongside: number | null; waitHours: number | null; usualHours: number | null } {
+  const indexes = terminals.map((t) => t.index).filter((v): v is number => v !== null);
+  const waiting = sum(terminals.map((t) => t.waiting));
+  const queued = terminals.filter((t) => (t.waiting ?? 0) > 0 && t.waitHours !== null && t.waitHours <= MAX_WAIT_HOURS);
+  const n = sum(queued.map((t) => t.waiting));
+  const waitHours = waiting === 0 ? 0 : n > 0 ? sum(queued.map((t) => t.waitHours! * t.waiting!)) / n : null;
+  const usual = terminals.map((t) => t.usualHours).filter((v): v is number => v !== null && v <= MAX_WAIT_HOURS);
+  const along = terminals.map((t) => t.alongside).filter((v): v is number => v !== null);
+  return {
+    index: indexes.length ? Math.max(...indexes) : null,
+    waiting,
+    alongside: along.length ? sum(along) : null,
+    waitHours,
+    usualHours: usual.length ? sum(usual) / usual.length : null,
+  };
+}
+
+/** A port's waits now, its own record, and what hormuz.now sees off it. */
+export function portWait(id: string, doc: CongestionDoc | null | undefined, areas: HzAreas | null | undefined): PortWait {
+  const p = doc?.v === 2 ? doc.ports[id] : undefined;
+  const terminals = p?.terminals ?? [];
+  const f = portFigures(terminals);
+  const days = terminals.length && f.waitHours !== null ? f.waitHours / 24 : null;
+  const typical = f.usualHours !== null ? f.usualHours / 24 : null;
 
   const areaId = PORT_AREA[id];
   const a = areaId ? areas?.areas.find((x) => x.id === areaId) : undefined;
@@ -121,31 +184,71 @@ export function portWait(id: string, doc: CongestionDoc | null | undefined, area
     }
     : null;
 
-  return { id, weeks, latest, days, measure, typical, level: waitLevel(days, typical), live };
+  return {
+    id,
+    index: f.index,
+    level: indexLevel(f.index),
+    waiting: f.waiting,
+    alongside: f.alongside,
+    days,
+    typical,
+    longer: isLonger(days, typical),
+    terminals,
+    history: doc?.v === 2 ? doc.history[id] ?? [] : [],
+    at: p?.at ?? null,
+    live,
+  };
 }
 
-/** "0.4 days" → "10 h"; "2.35" → "2.4 days". */
 /** Waits for every port that has any figure, keyed by port id. */
-export function allWaits(ids: string[], doc: CongestionDoc | null | undefined, areas: HzAreas | null | undefined, now: number): Record<string, PortWait> {
+export function allWaits(ids: string[], doc: CongestionDoc | null | undefined, areas: HzAreas | null | undefined): Record<string, PortWait> {
   const out: Record<string, PortWait> = {};
   for (const id of ids) {
-    const w = portWait(id, doc, areas, now);
-    if (w.days !== null || w.live) out[id] = w;
+    const w = portWait(id, doc, areas);
+    if (w.terminals.length || w.live) out[id] = w;
   }
   return out;
 }
 
+/** The GCC ports with terminal figures. */
+export function gccWaits(doc: CongestionDoc | null | undefined, areas: HzAreas | null | undefined): PortWait[] {
+  return Object.keys(GCC_PORTS).map((id) => portWait(id, doc, areas)).filter((w) => w.terminals.length > 0);
+}
+
+/** The record as one figure a day, the day's average wait in days, oldest first: calm enough for a sparkline. */
+export function dailyWait(history: HistoryPoint[]): number[] {
+  const days = new Map<number, number[]>();
+  for (const [h, , , wh] of history) {
+    if (wh === null) continue;
+    const d = Math.floor(h / 24);
+    days.set(d, [...(days.get(d) ?? []), wh]);
+  }
+  return [...days.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v.reduce((x, y) => x + y, 0) / v.length / 24);
+}
+
+/** "0.4 days" → "10 h"; "2.35" → "2.4 days"; nobody queuing → "No queue". */
 export function daysWord(d: number | null): string {
   if (d === null) return "–";
+  if (d === 0) return "No queue";
   if (d < 1) return `${Math.max(1, Math.round(d * 24))} h`;
   return `${d.toFixed(1)} ${d === 1 ? "day" : "days"}`;
 }
 
-/** The same, short enough for a table column: "2.4 d", "10 h". */
+/** The same, short enough for a table column: "2.4 d", "10 h", "0". */
 export function daysShort(d: number | null): string {
   if (d === null) return "–";
+  if (d === 0) return "0";
   if (d < 1) return `${Math.max(1, Math.round(d * 24))} h`;
   return `${d.toFixed(1)} d`;
+}
+
+/** A change in days, signed and short: "+2.1 d", "−5 h", "same". */
+export function diffShort(d: number | null): string {
+  if (d === null) return "–";
+  const h = Math.round(Math.abs(d) * 24);
+  if (h === 0) return "same";
+  const sign = d > 0 ? "+" : "−";
+  return h < 24 ? `${sign}${h} h` : `${sign}${Math.abs(d).toFixed(1)} d`;
 }
 
 export function hoursWord(h: number | null): string {
@@ -153,20 +256,4 @@ export function hoursWord(h: number | null): string {
   return h < 48 ? `${Math.round(h)} h` : `${(h / 24).toFixed(1)} days`;
 }
 
-export const LEVEL_WORD: Record<WaitLevel, string> = { high: "Congested", elevated: "Busier", normal: "Usual" };
-
-/** ISO week of a moment: the year and week number used by MarineTraffic. */
-export function isoWeek(t: number): { year: number; week: number } {
-  const d = new Date(t);
-  d.setUTCHours(0, 0, 0, 0);
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const y0 = Date.UTC(d.getUTCFullYear(), 0, 1);
-  return { year: d.getUTCFullYear(), week: Math.ceil(((d.getTime() - y0) / 86_400_000 + 1) / 7) };
-}
-
-/** The Monday an ISO week starts, as "2026-10-05". */
-export function weekStart(year: number, week: number): string {
-  const jan4 = Date.UTC(year, 0, 4);
-  const monday = jan4 - ((new Date(jan4).getUTCDay() || 7) - 1) * 86_400_000;
-  return new Date(monday + (week - 1) * 7 * 86_400_000).toISOString().slice(0, 10);
-}
+export const LEVEL_WORD: Record<WaitLevel, string> = { high: "Busy", elevated: "Moderate", normal: "Normal" };

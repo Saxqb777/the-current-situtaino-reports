@@ -5,9 +5,9 @@ import { PORTS, PORT_BY_ID, ZONE_BY_ID } from "@/lib/geo";
 import type { HzPort } from "@/lib/hormuz";
 import { PORTWATCH_PORT, callsBand } from "@/lib/portwatch";
 import { SEVERITIES } from "@/lib/types";
-import type { WatchEvent, ZoneId } from "@/lib/types";
+import type { WatchEvent } from "@/lib/types";
 import { SEVERITY_META, ago } from "@/lib/ui";
-import { LEVEL_WORD, type PortWait, allWaits, daysShort, daysWord } from "@/lib/waits";
+import { GCC_PORTS, LEVEL_WORD, type PortWait, allWaits, dailyWait, daysShort, daysWord, diffShort } from "@/lib/waits";
 import Congestion from "../Congestion";
 import type { Go, Model } from "../model";
 import SeverityMark from "../SeverityMark";
@@ -19,8 +19,7 @@ import { Credit, Kpi, Loading, Section } from "./parts";
 
 type View = "calls" | "waits";
 type Group = "all" | "gulf-energy" | "gulf-trade" | "bypass";
-type Region = "all" | ZoneId;
-type Sort = "hit" | "wait" | "rising" | "waiting" | "busy" | "name";
+type Sort = "hit" | "wait" | "index" | "rising" | "waiting" | "name";
 
 const GROUPS: { id: Group; label: string }[] = [
   { id: "all", label: "All" },
@@ -28,13 +27,14 @@ const GROUPS: { id: Group; label: string }[] = [
   { id: "gulf-energy", label: "Oil and gas" },
   { id: "bypass", label: "Outside Hormuz" },
 ];
-const REGIONS: { id: Region; label: string }[] = [
+const COUNTRIES: { id: string; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "gulf", label: "Gulf" },
-  { id: "hormuz", label: "Hormuz" },
-  { id: "redsea", label: "Red Sea" },
-  { id: "aden", label: "Aden" },
-  { id: "somalia", label: "Somalia" },
+  { id: "UAE", label: "UAE" },
+  { id: "Saudi Arabia", label: "Saudi" },
+  { id: "Qatar", label: "Qatar" },
+  { id: "Bahrain", label: "Bahrain" },
+  { id: "Kuwait", label: "Kuwait" },
+  { id: "Oman", label: "Oman" },
 ];
 const SORTS: Record<View, { id: Sort; label: string }[]> = {
   calls: [
@@ -45,9 +45,9 @@ const SORTS: Record<View, { id: Sort; label: string }[]> = {
   ],
   waits: [
     { id: "wait", label: "Longest wait" },
-    { id: "rising", label: "Rising most" },
-    { id: "waiting", label: "Most ships waiting now" },
-    { id: "busy", label: "Most calls" },
+    { id: "index", label: "Most congested" },
+    { id: "rising", label: "Most above usual" },
+    { id: "waiting", label: "Most ships queuing" },
     { id: "name", label: "A to Z" },
   ],
 };
@@ -61,14 +61,14 @@ export default function PortsPage({ m, go }: { m: Model; go: Go }) {
   const data = m.hz?.ports;
   const [view, setView] = useState<View>("calls");
   const [group, setGroup] = useState<Group>("all");
-  const [region, setRegion] = useState<Region>("all");
+  const [country, setCountry] = useState("all");
   const [sort, setSort] = useState<Sort>("hit");
   const [open, setOpen] = useState<string | null>(null);
   const now = m.now || Date.now();
 
   const recent = useMemo(() => m.snap.events.filter((e) => now - Date.parse(e.lastSeen) < WEEK), [m.snap.events, now]);
   const reportsFor = (id: string | undefined) => (id ? recent.filter((e) => e.ports.includes(id)) : []);
-  const waits = useMemo(() => allWaits(PORTS.map((p) => p.id), m.hz?.congestion, m.hz?.areas, now), [m.hz?.congestion, m.hz?.areas, now]);
+  const waits = useMemo(() => allWaits(PORTS.map((p) => p.id), m.hz?.congestion, m.hz?.areas), [m.hz?.congestion, m.hz?.areas]);
   const switchView = (v: View) => { setView(v); setSort(SORTS[v][0].id); setOpen(null); };
 
   if (!data) return <div className="page page--ports" data-page="ports"><Loading failed={m.hzFailed} what="port figures" /></div>;
@@ -78,14 +78,16 @@ export default function PortsPage({ m, go }: { m: Model; go: Go }) {
   for (const p of counted) bands[callsBand(p.pctCalls)]++;
   const median = [...counted].sort((a, b) => a.pctCalls - b.pctCalls)[Math.floor(counted.length / 2)]?.pctCalls ?? 0;
   const waiting = ports.reduce((n, p) => n + p.liveWaiting, 0);
-  const waitList = Object.values(waits).filter((w) => w.days !== null);
-  const congested = waitList.filter((w) => w.level === "high").length;
-  const busier = waitList.filter((w) => w.level === "elevated").length;
+  const waitList = Object.keys(GCC_PORTS).map((id) => waits[id]).filter((w) => w?.terminals.length);
+  const busy = waitList.filter((w) => w.level === "high").length;
+  const moderate = waitList.filter((w) => w.level === "elevated").length;
   const waitOf = (id: string | undefined) => (id ? waits[id] : undefined);
   // Ports without a figure go last whatever the order.
   const byWait = (a: PortWait | undefined, b: PortWait | undefined) => (b?.days ?? -1) - (a?.days ?? -1);
   const byRise = (a: PortWait | undefined, b: PortWait | undefined) => rise(b) - rise(a);
   const byWaiting = (a: PortWait | undefined, b: PortWait | undefined) => (b?.live?.waiting ?? -1) - (a?.live?.waiting ?? -1);
+  const byQueue = (a: PortWait, b: PortWait) => b.waiting - a.waiting;
+  const byIndex = (a: PortWait, b: PortWait) => (b.index ?? -1) - (a.index ?? -1);
 
   const shown = ports
     .filter((p) => group === "all" || p.group === group)
@@ -99,16 +101,17 @@ export default function PortsPage({ m, go }: { m: Model; go: Go }) {
       return Number(a.lowBase) - Number(b.lowBase) || a.pctCalls - b.pctCalls;
     });
 
-  const waitRows = PORTS
-    .filter((p) => waits[p.id] && (region === "all" || p.zone === region))
+  const waitRows = waitList
+    .map((w) => PORT_BY_ID[w.id])
+    .filter((p) => p && (country === "all" || p.country === country))
     .sort((a, b) => {
       const wa = waits[a.id];
       const wb = waits[b.id];
       if (sort === "rising") return byRise(wa, wb) || byWait(wa, wb);
-      if (sort === "waiting") return byWaiting(wa, wb) || byWait(wa, wb);
-      if (sort === "busy") return (wb.latest?.calls ?? -1) - (wa.latest?.calls ?? -1);
+      if (sort === "waiting") return byQueue(wa, wb) || byWait(wa, wb);
+      if (sort === "index") return byIndex(wa, wb) || byWait(wa, wb);
       if (sort === "name") return a.name.localeCompare(b.name);
-      return byWait(wa, wb) || a.name.localeCompare(b.name);
+      return byWait(wa, wb) || byIndex(wa, wb) || a.name.localeCompare(b.name);
     });
 
   const outer = PORTS.filter((p) => p.zone === "redsea" || p.zone === "aden" || p.zone === "somalia")
@@ -133,14 +136,14 @@ export default function PortsPage({ m, go }: { m: Model; go: Go }) {
         <Kpi label="Hard hit, under 40%" value={<CountUp value={bands.low} />} tone="danger" foot={`of ${counted.length} ports`} />
         <Kpi label="Reduced, 40–75%" value={<CountUp value={bands.reduced} />} tone="warn" foot="of normal calls" />
         {waitList.length > 0
-          ? <Kpi label="Waits longer than usual" value={<CountUp value={congested + busier} />} tone={congested ? "danger" : busier ? "warn" : "ok"} foot={`${congested} congested · ${busier} busier · of ${waitList.length}`} />
+          ? <Kpi label="GCC ports busy or moderate" value={<CountUp value={busy + moderate} />} tone={busy ? "danger" : moderate ? "warn" : "ok"} foot={`${busy} busy · ${moderate} moderate · of ${waitList.length}`} />
           : <Kpi label="Near normal" value={<CountUp value={bands.normal} />} tone="ok" foot="75% or more" />}
         <Kpi label="Ships waiting off ports" value={<CountUp value={waiting} />} foot="live, hormuz.now" />
       </div>
 
       <div className="viewtabs" role="tablist" aria-label="What to compare">
         <button role="tab" aria-selected={view === "calls"} onClick={() => switchView("calls")}>Port calls<small>against before the crisis</small></button>
-        <button role="tab" aria-selected={view === "waits"} onClick={() => switchView("waits")} data-tour="ports-waits">Waiting times<small>{waitList.length ? `${waitList.length} ports, week by week` : "how long ships wait"}</small></button>
+        <button role="tab" aria-selected={view === "waits"} onClick={() => switchView("waits")} data-tour="ports-waits">Waiting times<small>{waitList.length ? `${waitList.length} GCC ports, read hourly` : "how long ships wait"}</small></button>
       </div>
 
       <div className="toolbar" role="group" aria-label="Filter and sort ports">
@@ -151,9 +154,9 @@ export default function PortsPage({ m, go }: { m: Model; go: Go }) {
             ))}
           </div>
         ) : (
-          <div className="seg seg--page" aria-label="Region">
-            {REGIONS.map((r) => (
-              <button key={r.id} aria-pressed={region === r.id} onClick={() => setRegion(r.id)}>{r.label}</button>
+          <div className="seg seg--page" aria-label="Country">
+            {COUNTRIES.map((c) => (
+              <button key={c.id} aria-pressed={country === c.id} onClick={() => setCountry(c.id)}>{c.label}</button>
             ))}
           </div>
         )}
@@ -186,9 +189,9 @@ export default function PortsPage({ m, go }: { m: Model; go: Go }) {
       ) : (
         <ol className="ports ports--waits" data-tour="ports-list">
           <li className="ports__head" aria-hidden="true">
-            <span>Port</span><span>Typical wait, last week</span><span>Vs usual</span><span>Waiting now</span><span>13 weeks</span>
+            <span>Port</span><span>Wait now, against usual</span><span>Vs usual</span><span>Index</span><span>30 days</span>
           </li>
-          {waitRows.length === 0 && <li className="muted ports__empty">No wait figures yet. They arrive a few ports at a time, so check back shortly.</li>}
+          {waitRows.length === 0 && <li className="muted ports__empty">No wait figures here yet. Ports are read every hour.</li>}
           {waitRows.map((p) => (
             <WaitRow
               key={p.id}
@@ -223,7 +226,7 @@ export default function PortsPage({ m, go }: { m: Model; go: Go }) {
                 <span className="outer__name">{port.name}<small>{port.country} · {ZONE_BY_ID[port.zone].short}</small></span>
                 <span className="outer__n mono">
                   {count ? `${count} ${count === 1 ? "report" : "reports"}` : "quiet"}
-                  {waits[port.id]?.days != null && <b data-level={waits[port.id].level}>{daysWord(waits[port.id].days)} wait</b>}
+                  {waits[port.id]?.days != null && <b data-level={waits[port.id].level}>{waits[port.id].days ? `${daysWord(waits[port.id].days)} wait` : "No queue"}</b>}
                 </span>
               </button>
             </li>
@@ -233,13 +236,13 @@ export default function PortsPage({ m, go }: { m: Model; go: Go }) {
 
       <Credit>
         <p><b>Port calls</b> IMF PortWatch port calls and trade estimates, via hormuz.now (CC BY 4.0). Normal means the daily average for the year before 28 Feb 2026. Ports marked “small base” had very few calls before, so their percentages swing widely.</p>
-        <p><b>Waiting times</b> MarineTraffic’s weekly median days at anchor (or in port, where a port has no anchorage figure), all ship types. Usual means the middle of the twelve weeks before. Congested: half as long again as usual and a day longer; busier: a fifth longer and half a day. Ships waiting now: hormuz.now.</p>
+        <p><b>Waiting times</b> Kpler container-terminal congestion at 16 GCC ports, read every hour. Wait now is how long the ships queuing for a berth have waited, averaged across a port’s terminals by how many queue at each; waits over 30 days are left out as stale records. Usual is the terminals’ usual wait. Index is Kpler’s 0 to 10 congestion index for the port’s busiest terminal: 7 or more busy, 4 to 7 moderate. Ships waiting off a port, of every kind: hormuz.now.</p>
       </Credit>
     </div>
   );
 }
 
-/** How much longer than usual the newest week's wait was, in days; ports without a figure sort last. */
+/** How much longer than usual the wait is now, in days; ports without a figure sort last. */
 function rise(w: PortWait | undefined): number {
   return w?.days != null && w.typical != null ? w.days - w.typical : -99;
 }
@@ -303,13 +306,13 @@ function PortRow({ p, wait, open, onToggle, reports, go, now }: { p: HzPort; wai
 function WaitRow({ id, w, open, onToggle, reports, go, now }: { id: string; w: PortWait; open: boolean; onToggle(): void; reports: WatchEvent[]; go: Go; now: number }) {
   const port = PORT_BY_ID[id];
   const diff = w.days !== null && w.typical !== null ? w.days - w.typical : null;
-  const series = w.weeks.map((x) => (w.measure === "port" ? x.portDays : x.anchorDays)).filter((v): v is number => v !== null);
+  const series = dailyWait(w.history);
   return (
     <li className="ports__item" data-open={open}>
       <button className="ports__row" aria-expanded={open} onClick={onToggle}>
         <span className="ports__name">
           {port.name}
-          <small>{port.country} · {ZONE_BY_ID[port.zone].short}</small>
+          <small>{port.country} · {w.terminals.length} {w.terminals.length === 1 ? "terminal" : "terminals"}</small>
         </span>
         <span className="ports__calls">
           <span className="ports__bar" data-level={w.level ?? "none"}>
@@ -317,12 +320,10 @@ function WaitRow({ id, w, open, onToggle, reports, go, now }: { id: string; w: P
             {w.typical !== null && <em aria-hidden="true" style={{ left: `calc(${Math.min(100, (w.typical / WAIT_SCALE) * 100)}% - 1px)` }} />}
           </span>
           <b className="mono" data-level={w.level ?? "none"}>{daysWord(w.days)}</b>
-          <small>{w.days === null ? "no weekly figure" : `${w.measure === "port" ? "in port" : "at anchor"} · ${LEVEL_WORD[w.level ?? "normal"]}`}</small>
+          <small>{w.waiting ? `${w.waiting} queuing` : "none queuing"}{w.level ? ` · ${LEVEL_WORD[w.level]}` : ""}</small>
         </span>
-        <span className="ports__exp mono" data-label="Vs usual" data-up={diff !== null && diff > 0}>
-          {diff === null ? "–" : `${diff > 0 ? "+" : diff < 0 ? "−" : ""}${daysShort(Math.abs(diff))}`}
-        </span>
-        <span className="ports__wait mono" data-label="Waiting now" data-none={!w.live}>{w.live ? w.live.waiting : "–"}</span>
+        <span className="ports__exp mono" data-label="Vs usual" data-up={w.longer}>{diffShort(diff)}</span>
+        <span className="ports__wait mono" data-label="Index"><b data-level={w.level ?? "none"}>{w.index === null ? "–" : w.index.toFixed(1)}</b></span>
         <span className="ports__spark">{series.length > 1 && <Spark values={series} height={26} dot reference={w.typical ?? undefined} tone={w.level === "high" ? "danger" : "ink"} />}</span>
       </button>
       {open && (

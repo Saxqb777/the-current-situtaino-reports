@@ -40,8 +40,8 @@ export default function RouteIn({ m, go, zones, waits }: { m: Model; go: Go; zon
     return parts.join(" · ");
   };
 
-  const gulfWaits = Object.values(waits).filter((w) => w.days !== null && GULF_ZONES.has(PORT_BY_ID[w.id]?.zone));
-  const longer = gulfWaits.filter((w) => w.level === "high" || w.level === "elevated");
+  const gulfWaits = Object.values(waits).filter((w) => w.terminals.length && w.days !== null && GULF_ZONES.has(PORT_BY_ID[w.id]?.zone));
+  const longer = gulfWaits.filter((w) => w.longer);
   const longest = [...gulfWaits].sort((a, b) => (b.days ?? 0) - (a.days ?? 0))[0];
   const hardest = pw.filter((p) => !p.lowBase && PORTWATCH_PORT[p.slug]).sort((a, b) => a.pctCalls - b.pctCalls)[0];
 
@@ -78,7 +78,7 @@ export default function RouteIn({ m, go, zones, waits }: { m: Model; go: Go; zon
                 : "Port figures loading"}
           </span>
           <span className="route__meta mono">
-            {longest ? `Longest: ${PORT_BY_ID[longest.id]?.name} ${daysShort(longest.days)}` : `${pw.length || "–"} ports tracked`}
+            {longest?.days ? `Longest: ${PORT_BY_ID[longest.id]?.name} ${daysShort(longest.days)}` : longest ? "No queues at the terminals" : `${pw.length || "–"} ports tracked`}
           </span>
         </button>
       </li>

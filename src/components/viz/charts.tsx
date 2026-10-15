@@ -282,50 +282,59 @@ export function WeekBars({ weeks, reference, height = 64 }: { weeks: number[]; r
   );
 }
 
-export interface WaitPoint { start: string; days: number | null; calls: number | null; partial: boolean }
+export interface WaitHistoryPoint { t: number; days: number | null; waiting: number; index: number | null }
 
-/** Median wait a week, with the port's usual wait dotted across; longer-than-usual weeks in the danger colour. */
-export function WaitWeeks({ weeks, typical, what, height = 84 }: { weeks: WaitPoint[]; typical: number | null; what: string; height?: number }) {
+const when = (t: number) => {
+  const d = new Date(t);
+  return `${shortDate(d.toISOString().slice(0, 10))} ${d.toISOString().slice(11, 13)}:00`;
+};
+
+/** Our own record of a port, a point every few hours: how long the queue had waited, with the usual wait dotted across. */
+export function WaitHistory({ points, typical, word, height = 96 }: { points: WaitHistoryPoint[]; typical: number | null; word: (days: number) => string; height?: number }) {
   const [ref, w] = useWidth<HTMLDivElement>();
-  const n = weeks.length;
-  const max = niceMax(Math.max(1, ...weeks.map((p) => p.days ?? 0), typical ?? 0));
-  const y = lin(0, max, height - 2, 4);
-  const step = w / Math.max(1, n);
-  const { index, handlers } = useScrub(n, step / 2, w - step);
-  const lastFull = weeks.findLastIndex((p) => !p.partial && p.days !== null);
-  const at = index ?? (lastFull >= 0 ? lastFull : n - 1);
-  const p = weeks[at];
-  const tone = (v: number) => (typical !== null && v >= typical * 1.5 && v - typical >= 1 ? "danger" : typical !== null && v >= typical * 1.2 && v - typical >= 0.5 ? "warn" : "ink");
-  const pid = useId().replace(/:/g, "");
+  const n = points.length;
+  const max = niceMax(Math.max(0.5, ...points.map((p) => p.days ?? 0), typical ?? 0));
+  const base = height - 16;
+  const y = lin(0, max, base, 6);
+  const x = lin(0, Math.max(1, n - 1), 1, Math.max(2, w - 1));
+  const { index, handlers } = useScrub(n, 1, w - 2);
+  const at = index ?? n - 1;
+  const p = points[at];
+  // A reading Kpler did not give breaks the line rather than dropping to zero.
+  const runs: { i: number; v: number }[][] = [];
+  points.forEach((q, i) => {
+    if (q.days === null) return;
+    const last = runs.at(-1);
+    if (last && last.at(-1)!.i === i - 1) last.push({ i, v: q.days });
+    else runs.push([{ i, v: q.days }]);
+  });
+  const line = (r: { i: number; v: number }[]) => r.map((q, k) => `${k ? "L" : "M"}${x(q.i).toFixed(1)},${y(q.v).toFixed(1)}`).join("");
+  const days = Math.round((points[n - 1]?.t - points[0]?.t) / 86_400_000);
   return (
     <figure className="viz viz--waits">
       <Readout>
-        <b>{p ? `Week of ${shortDate(p.start)}` : "–"}</b>
-        <span>{p?.days != null ? `${fmt(p.days, 1)} days ${what}` : "no figure"}{p?.partial ? " so far" : ""}</span>
-        {p?.calls != null && <span className="viz__muted">{p.calls} calls</span>}
-        {typical !== null && <span className="viz__muted">usual {fmt(typical, 1)}</span>}
+        <b>{p ? when(p.t) : "–"}</b>
+        <span>{p?.days == null ? "no figure" : word(p.days)}</span>
+        {p && <span className="viz__muted">{p.waiting} queuing</span>}
+        {p?.index != null && <span className="viz__muted">index {fmt(p.index, 1)}</span>}
       </Readout>
       <div ref={ref} className="viz__plot" {...handlers} style={{ height }}>
         {w > 0 && (
-          <svg width={w} height={height} aria-hidden="true">
-            <defs>
-              <pattern id={`wp${pid}`} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                <line x1="0" y1="0" x2="0" y2="4" className="viz__hatch" />
-              </pattern>
-            </defs>
-            {weeks.map((q, i) => q.days === null ? null : (
-              <rect
-                key={q.start}
-                className={`viz__wait${i === at ? " is-on" : ""}${q.partial ? " is-partial" : ""}`}
-                data-tone={tone(q.days)}
-                style={q.partial ? { fill: `url(#wp${pid})` } : undefined}
-                x={i * step + 0.5}
-                y={y(q.days)}
-                width={Math.max(1, step - 3)}
-                height={height - 2 - y(q.days)}
-              />
+          <svg width={w} height={height} role="img" aria-label={`Wait at this port over the last ${days || 1} days`}>
+            {runs.map((r) => (
+              <g key={r[0].i}>
+                {r.length > 1 && <path className="viz__area" d={`${line(r)} L${x(r.at(-1)!.i).toFixed(1)},${base} L${x(r[0].i).toFixed(1)},${base} Z`} />}
+                <path className="viz__line" d={line(r)} />
+              </g>
             ))}
             {typical !== null && <line className="viz__baseline" x1={0} x2={w} y1={y(typical)} y2={y(typical)} />}
+            {p?.days != null && <circle className={`viz__point${index === null ? " viz__point--now" : ""}`} cx={x(at)} cy={y(p.days)} r={3.5} />}
+            {index !== null && <line className="viz__cursor" x1={x(index)} x2={x(index)} y1={4} y2={base} />}
+            <g className="viz__axis">
+              <text x={1} y={height - 3} textAnchor="start">{points[0] ? shortDate(new Date(points[0].t).toISOString().slice(0, 10)) : ""}</text>
+              {typical !== null && <text x={w / 2} y={height - 3} textAnchor="middle">Dotted: usual, {word(typical)}</text>}
+              <text x={w - 1} y={height - 3} textAnchor="end">Now</text>
+            </g>
           </svg>
         )}
       </div>

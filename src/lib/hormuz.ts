@@ -133,7 +133,7 @@ export interface HormuzBundle {
   crossings: HzCrossing[];
   ports: HzPorts | null;
   geo: HzGeo | null;
-  /** Weekly waits per port from MarineTraffic, added by the route. */
+  /** Container-terminal waits at the GCC ports from Kpler, added by the route. */
   congestion?: CongestionDoc | null;
 }
 

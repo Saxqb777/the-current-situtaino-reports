@@ -72,7 +72,7 @@ export default function DetailCard({ selection, events, vessels, detail, hz, onS
     const pw = slug ? hz?.ports?.ports.find((p) => p.slug === slug) : undefined;
     const band = pw ? callsBand(pw.pctCalls) : null;
     const now = Date.now();
-    const wait = portWait(port.id, hz?.congestion, hz?.areas, now);
+    const wait = portWait(port.id, hz?.congestion, hz?.areas);
     return (
       <Card kicker={`${port.country} · ${ZONE_BY_ID[port.zone].name}`} title={port.name} onClose={onClose} mark={worst ? <SeverityMark level={worst.severity} size={28} /> : undefined}>
         {pw && band && (
@@ -92,7 +92,7 @@ export default function DetailCard({ selection, events, vessels, detail, hz, onS
             <p className="pcard__src">IMF PortWatch, via hormuz.now · to {pw.latestDate}</p>
           </div>
         )}
-        {(wait.days !== null || wait.live) && <Congestion w={wait} now={now} />}
+        {(wait.terminals.length > 0 || wait.live) && <Congestion w={wait} now={now} />}
         <dl className="card__grid">
           <dt>Position</dt><dd className="mono">{dm(port.position[1], "lat")} {dm(port.position[0], "lon")}</dd>
           <dt>Type</dt><dd style={{ textTransform: "capitalize" }}>{port.kind}</dd>

@@ -742,6 +742,13 @@ b[data-level] { color: var(--lv); }
 .cong__live p { margin: 0; font-size: 0.88rem; line-height: 1.4; }
 .cong__live .kicker__live { display: inline-block; margin-right: 6px; vertical-align: 1px; }
 .cong__src { margin: 8px 0 0; font-size: 0.7rem; color: var(--ink-3); }
+.cong__terms { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--ink); }
+.cong__terms li { display: grid; grid-template-columns: minmax(0, 1fr) 3.4em 4.2em 4.6em; gap: 8px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--rule); font-size: 0.84rem; }
+.cong__terms li > :not(:first-child) { text-align: right; }
+.cong__terms b { font-weight: 600; }
+.cong__terms .cong__terms-head { padding: 5px 0; font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.cong__lines { margin: 10px 0 0; font-size: 0.8rem; line-height: 1.4; color: var(--ink-2); }
+.cong__lines b { margin-right: 4px; font-weight: 600; color: var(--ink); }
 .viz__wait { fill: color-mix(in srgb, var(--ink) 38%, var(--paper)); }
 .viz__wait[data-tone="warn"] { fill: color-mix(in srgb, var(--sev-elevated) 70%, var(--paper)); }
 .viz__wait[data-tone="danger"] { fill: color-mix(in srgb, var(--sev-high) 70%, var(--paper)); }

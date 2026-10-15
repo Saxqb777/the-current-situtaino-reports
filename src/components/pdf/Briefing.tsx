@@ -4,7 +4,7 @@ import type { HormuzBundle } from "@/lib/hormuz";
 import { PORTWATCH_PORT, callsBand } from "@/lib/portwatch";
 import type { Severity, WatchEvent, ZoneSummary } from "@/lib/types";
 import { ROUTE, verdict } from "@/lib/verdict";
-import { type PortWait, allWaits, daysWord } from "@/lib/waits";
+import { LEVEL_WORD, type PortWait, allWaits, daysWord, gccWaits } from "@/lib/waits";
 
 let registered = false;
 export function registerFonts(origin: string) {
@@ -132,43 +132,44 @@ function MonthlyChart({ hz, width = 503, height = 110 }: { hz: HormuzBundle; wid
 
 const levelC = (w: PortWait | undefined) => (w?.level === "high" ? BAND_C.low : w?.level === "elevated" ? BAND_C.reduced : BAND_C.normal);
 
-/** How long ships wait at each port, from MarineTraffic, with who is waiting off the ports now. */
+/** How long ships queue at the GCC ports' container terminals, from Kpler, with who is waiting off the ports now. */
 function WaitsPage({ hz, mast, footer }: { hz: HormuzBundle; mast: React.ReactNode; footer: React.ReactNode }) {
-  const waits = Object.values(allWaits(Object.keys(PORT_BY_ID), hz.congestion, hz.areas, Date.now())).filter((w) => w.days !== null);
-  const longest = [...waits].sort((a, b) => (b.days ?? 0) - (a.days ?? 0)).slice(0, 18);
-  const congested = waits.filter((w) => w.level === "high").length;
-  const busier = waits.filter((w) => w.level === "elevated").length;
-  const week = longest[0]?.latest?.start;
+  const waits = gccWaits(hz.congestion, hz.areas).filter((w) => w.days !== null);
+  const rows = [...waits].sort((a, b) => (b.days ?? 0) - (a.days ?? 0) || (b.index ?? 0) - (a.index ?? 0));
+  const longer = waits.filter((w) => w.longer).length;
+  const busy = waits.filter((w) => w.level === "high").length;
+  const moderate = waits.filter((w) => w.level === "elevated").length;
+  const read = hz.congestion?.at;
   const live = [...(hz.areas?.waiting.areas ?? [])].sort((a, b) => b.count - a.count).slice(0, 6);
   return (
     <Page size="A4" style={s.page}>
       <View style={s.bandTop} fixed />
       {mast}
-      <Text style={[s.kicker, { marginTop: 18 }]}>Port congestion{week ? ` · week from ${week}` : ""}</Text>
-      <Text style={s.gateTitle}><Text style={{ color: congested ? BAND_C.low : busier ? BAND_C.reduced : C.ink }}>{congested + busier} of {waits.length} ports</Text> wait longer than usual</Text>
-      <Text style={s.statusSub}>{congested} congested, {busier} busier, against each port&apos;s own last twelve weeks</Text>
-      <View style={s.sectionHead}><Text style={s.kicker}>Longest waits · last full week</Text></View>
+      <Text style={[s.kicker, { marginTop: 18 }]}>GCC port congestion{read ? ` · read ${day(read)} ${hhmm(read)} UTC` : ""}</Text>
+      <Text style={s.gateTitle}><Text style={{ color: longer ? BAND_C.low : C.ink }}>{longer} of {waits.length} ports</Text> wait longer than usual</Text>
+      <Text style={s.statusSub}>{busy} busy and {moderate} moderate by congestion index, at their container terminals</Text>
+      <View style={s.sectionHead}><Text style={s.kicker}>Longest waits now</Text></View>
       <View style={s.tRow}>
         <Text style={[s.tHead, { width: 120 }]}>Port</Text>
-        <Text style={[s.tHead, { flex: 1 }]}>Typical wait</Text>
+        <Text style={[s.tHead, { flex: 1 }]}>Wait now</Text>
         <Text style={[s.tHead, { width: 52, textAlign: "right" }]}>Usual</Text>
-        <Text style={[s.tHead, { width: 52, textAlign: "right" }]}>Calls</Text>
-        <Text style={[s.tHead, { width: 52, textAlign: "right" }]}>Waiting now</Text>
+        <Text style={[s.tHead, { width: 52, textAlign: "right" }]}>Index</Text>
+        <Text style={[s.tHead, { width: 52, textAlign: "right" }]}>Queuing</Text>
       </View>
-      {longest.map((w) => (
+      {rows.map((w) => (
         <View key={w.id} style={s.tRow} wrap={false}>
-          <Text style={s.tName}>{PORT_BY_ID[w.id]?.name} <Text style={s.tSmall}>{PORT_BY_ID[w.id]?.country}</Text></Text>
+          <Text style={s.tName}>{PORT_BY_ID[w.id]?.name} <Text style={s.tSmall}>{PORT_BY_ID[w.id]?.country.replace("Saudi Arabia", "Saudi")}</Text></Text>
           <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6 }}>
             <Svg width={120} height={7}>
               <Rect x={0} y={0} width={120} height={7} fill={C.wash} />
               <Rect x={0} y={0} width={Math.min(120, ((w.days ?? 0) / 7) * 120)} height={7} fill={levelC(w)} />
               {w.typical !== null && <Rect x={Math.min(119, (w.typical / 7) * 120)} y={0} width={1.2} height={7} fill={C.ink} />}
             </Svg>
-            <Text style={{ fontFamily: "Spline Mono", fontSize: 8, color: levelC(w) }}>{daysWord(w.days)} {w.measure === "port" ? "in port" : "at anchor"}</Text>
+            <Text style={{ fontFamily: "Spline Mono", fontSize: 8, color: levelC(w) }}>{daysWord(w.days)}{w.level ? ` · ${LEVEL_WORD[w.level].toLowerCase()}` : ""}</Text>
           </View>
           <Text style={s.tNum}>{daysWord(w.typical)}</Text>
-          <Text style={s.tNum}>{w.latest?.calls ?? "–"}</Text>
-          <Text style={s.tNum}>{w.live ? w.live.waiting : "–"}</Text>
+          <Text style={[s.tNum, { color: levelC(w) }]}>{w.index === null ? "–" : w.index.toFixed(1)}</Text>
+          <Text style={s.tNum}>{w.waiting}</Text>
         </View>
       ))}
 
@@ -184,7 +185,7 @@ function WaitsPage({ hz, mast, footer }: { hz: HormuzBundle; mast: React.ReactNo
           ))}
         </>
       ) : null}
-      <Text style={[s.caption, { marginTop: 10 }]}>Waits: MarineTraffic weekly median days at anchor (in port where a port has no anchorage figure), all ship types. Usual is the middle of the twelve weeks before, marked by the tick. Congested: half as long again as usual and a day longer; busier: a fifth longer and half a day. Waiting now: hormuz.now (CC BY 4.0).</Text>
+      <Text style={[s.caption, { marginTop: 10 }]}>Waits: Kpler container-terminal congestion, read every hour. Wait now is how long the ships queuing for a berth have waited, averaged across a port&apos;s terminals by how many queue at each. Usual is the terminals&apos; usual wait, marked by the tick. Longer than usual: a quarter longer and six hours more. Index: Kpler&apos;s 0 to 10 congestion index for the busiest terminal; 7 or more busy, 4 to 7 moderate. Waiting off the ports now, every kind of ship: hormuz.now (CC BY 4.0).</Text>
       {footer}
     </Page>
   );
@@ -195,7 +196,7 @@ function StraitPage({ hz, mast, footer, waitingHere, level }: { hz: HormuzBundle
   const st = hz.status!;
   const col = STATUS_C[st.status.level] ?? C.ink;
   const ports = [...(hz.ports?.ports ?? [])].filter((p) => !p.lowBase).sort((a, b) => a.pctCalls - b.pctCalls);
-  const waits = allWaits(Object.keys(PORT_BY_ID), hz.congestion, hz.areas, Date.now());
+  const waits = allWaits(Object.keys(PORT_BY_ID), hz.congestion, hz.areas);
   // With a waits page, who is waiting goes there.
   const waiting = waitingHere ? [...(hz.areas?.waiting.areas ?? [])].sort((a, b) => b.count - a.count).slice(0, 5) : [];
   return (
@@ -261,7 +262,7 @@ function StraitPage({ hz, mast, footer, waitingHere, level }: { hz: HormuzBundle
           ))}
         </>
       ) : null}
-      <Text style={[s.caption, { marginTop: 10 }]}>Source: hormuz.now (CC BY 4.0). Port calls and exports: IMF PortWatch, via hormuz.now, to {hz.ports?.ports[0]?.latestDate ?? "latest"}. Ports with very few calls before the crisis are left out.{Object.keys(waits).length ? " Wait: MarineTraffic weekly median days at anchor, last full week." : ""}</Text>
+      <Text style={[s.caption, { marginTop: 10 }]}>Source: hormuz.now (CC BY 4.0). Port calls and exports: IMF PortWatch, via hormuz.now, to {hz.ports?.ports[0]?.latestDate ?? "latest"}. Ports with very few calls before the crisis are left out.{Object.values(waits).some((w) => w.terminals.length) ? " Wait: how long ships queuing at the container terminals have waited, from Kpler, read hourly." : ""}</Text>
       {footer}
     </Page>
   );
@@ -301,7 +302,7 @@ export function Briefing({ title, preparedFor, note, generatedAt, events, zones,
   const worst = events.reduce<Severity>((m, e) => (["low", "elevated", "high", "critical"].indexOf(e.severity) > ["low", "elevated", "high", "critical"].indexOf(m) ? e.severity : m), "low");
   const official = events.filter((e) => e.official).length;
   const sources = new Set(events.flatMap((e) => e.sources.map((x) => x.publisher || x.name))).size;
-  const hasWaits = Object.values(hz?.congestion?.ports ?? {}).some((p) => p.weeks.length > 0);
+  const hasWaits = gccWaits(hz?.congestion, hz?.areas).length > 0;
 
   const footer = (
     <View style={s.footer} fixed>

@@ -5,8 +5,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Strait status, traffic history, ships waiting, recent crossings and the 25
- * Gulf ports, from hormuz.now, with each port's weekly waits from
- * MarineTraffic. Cached at the edge for a minute, as hormuz.now asks; it
+ * Gulf ports, from hormuz.now, with the GCC ports' container-terminal waits
+ * from Kpler. Cached at the edge for a minute, as hormuz.now asks; it
  * updates its own figures about once a minute.
  */
 export async function GET() {

@@ -1,15 +1,16 @@
 "use client";
 
-import { LEVEL_WORD, type PortWait, daysWord, hoursWord } from "@/lib/waits";
+import { ago } from "@/lib/ui";
+import { LEVEL_WORD, type PortWait, daysShort, daysWord, diffShort, hoursWord, indexLevel } from "@/lib/waits";
 import Spark from "./viz/Spark";
-import { WaitWeeks } from "./viz/charts";
-import { fmt, shortDate } from "./viz/scale";
+import { WaitHistory } from "./viz/charts";
+import { fmt } from "./viz/scale";
 
-const WEEK_MS = 7 * 24 * 3600_000;
+const HOUR = 3600_000;
 
-/** How long ships wait at one port: the newest week against usual, week by week, and who is waiting off it now. */
+/** How long ships queue at one port's container terminals now, against usual, with our own record and who waits off it. */
 export default function Congestion({ w, now, compact, bare }: { w: PortWait | undefined; now: number; compact?: boolean; bare?: boolean }) {
-  if (!w || (w.days === null && !w.live)) {
+  if (!w || (!w.terminals.length && !w.live)) {
     return (
       <section className="cong cong--none">
         <h4 className="cong__title">Waiting times</h4>
@@ -17,39 +18,48 @@ export default function Congestion({ w, now, compact, bare }: { w: PortWait | un
       </section>
     );
   }
-  const what = w.measure === "port" ? "in port" : "at anchor";
   const diff = w.days !== null && w.typical !== null ? w.days - w.typical : null;
-  const latestCalls = w.latest?.calls ?? null;
+  const lines = [...new Set(w.terminals.flatMap((t) => t.carriers))];
   return (
     <section className="cong" data-level={w.level ?? "none"}>
-      <h4 className="cong__title">Waiting times{bare && w.latest ? `, week of ${shortDate(w.latest.start)}` : ""}</h4>
-      {w.days !== null && (
+      <h4 className="cong__title">Container terminals{w.at ? ` · read ${ago(w.at, now)}` : ""}</h4>
+      {w.terminals.length > 0 && (
         <>
           {!bare && <div className="cong__head">
             <b className="cong__days mono">{daysWord(w.days)}</b>
             <span className="cong__words">
               {w.level && <span className="cong__level">{LEVEL_WORD[w.level]}</span>}
-              typical wait {what}
-              <small>week of {shortDate(w.latest!.start)}</small>
+              {w.waiting > 0 ? `average wait of the ${w.waiting} ${w.waiting === 1 ? "ship" : "ships"} queuing for a berth` : "no ships queuing for a berth now"}
             </span>
           </div>}
           <div className="cong__facts">
             <div><span>Usual here</span><b className="mono">{daysWord(w.typical)}</b></div>
-            <div><span>Change</span><b className="mono" data-up={diff !== null && diff > 0}>{diff === null ? "–" : `${diff > 0 ? "+" : diff < 0 ? "−" : ""}${daysWord(Math.abs(diff))}`}</b></div>
-            {w.measure === "anchor" && <div><span>In port</span><b className="mono">{daysWord(w.latest?.portDays ?? null)}</b></div>}
-            <div><span>Calls that week</span><b className="mono">{latestCalls ?? "–"}</b></div>
+            <div><span>Vs usual</span><b className="mono" data-up={w.longer}>{diffShort(diff)}</b></div>
+            <div><span>Congestion index</span><b className="mono" data-level={w.level ?? "none"}>{w.index === null ? "–" : `${fmt(w.index, 1)} / 10`}</b></div>
+            <div><span>Queuing · alongside</span><b className="mono">{w.waiting} · {w.alongside ?? "–"}</b></div>
           </div>
-          {!compact && (
-            <WaitWeeks
-              what={what}
+          {!compact && w.history.length > 1 && (
+            <WaitHistory
               typical={w.typical}
-              weeks={w.weeks.map((x) => ({
-                start: x.start,
-                days: w.measure === "port" ? x.portDays : x.anchorDays,
-                calls: x.calls,
-                partial: Date.parse(x.start) + WEEK_MS > now,
-              }))}
+              word={daysWord}
+              points={w.history.map(([h, index, waiting, wh]) => ({ t: h * HOUR, index, waiting, days: wh === null ? null : wh / 24 }))}
             />
+          )}
+          {!compact && w.terminals.length > 1 && (
+            <ul className="cong__terms" aria-label="Each terminal">
+              <li className="cong__terms-head" aria-hidden="true"><span>Terminal</span><span>Index</span><span>Queuing</span><span>Wait</span></li>
+              {w.terminals.map((t) => (
+                <li key={t.id}>
+                  <span>{t.name}</span>
+                  <b className="mono" data-level={indexLevel(t.index) ?? "none"}>{t.index === null ? "–" : fmt(t.index, 1)}</b>
+                  <span className="mono">{t.waiting ?? "–"}</span>
+                  <span className="mono">{t.waiting && t.waitHours !== null ? daysShort(t.waitHours / 24) : "–"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!compact && lines.length > 0 && (
+            <p className="cong__lines"><b>Lines calling</b> {lines.slice(0, 8).join(", ")}{lines.length > 8 ? ` and ${lines.length - 8} more` : ""}</p>
           )}
         </>
       )}
@@ -57,7 +67,7 @@ export default function Congestion({ w, now, compact, bare }: { w: PortWait | un
         <div className="cong__live">
           <p>
             <i className="kicker__live" data-on="true" aria-hidden="true" />
-            <b>{fmt(w.live.waiting)} ships</b> waiting off {w.live.areaName} now
+            <b>{fmt(w.live.waiting)} ships</b> of every kind waiting off {w.live.areaName} now
             {w.live.medianHours !== null && <>, typically for <b>{hoursWord(w.live.medianHours)}</b></>}.
             {w.live.over24h !== null && <> {fmt(w.live.over24h)} over a day{w.live.over7d ? `, ${fmt(w.live.over7d)} over a week` : ""}.</>}
           </p>
@@ -65,9 +75,9 @@ export default function Congestion({ w, now, compact, bare }: { w: PortWait | un
         </div>
       )}
       <p className="cong__src">
-        {w.days !== null && "Weekly medians, all ship types: MarineTraffic."}
-        {w.days !== null && w.live && " "}
-        {w.live && "Waiting now: hormuz.now (CC BY 4.0)."}
+        {w.terminals.length > 0 && "Container terminals: Kpler, read every hour."}
+        {w.terminals.length > 0 && w.live && " "}
+        {w.live && "Waiting off the port: hormuz.now (CC BY 4.0)."}
       </p>
     </section>
   );
