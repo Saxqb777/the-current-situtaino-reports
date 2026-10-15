@@ -20,6 +20,7 @@ export interface RefreshResult {
   sourcesOk?: number;
   vessels?: number;
   aisMessages?: number;
+  aisFrames?: number;
   aisError?: string;
   ms?: number;
 }
@@ -61,7 +62,7 @@ async function refreshShips(apiKey: string) {
   await s.putVessels(changed);
   await s.addTransits(tracker.transits);
   await s.putMeta({ aisConnected: result.connected && !result.error, ...(tracker.messages > 0 ? { lastAisSample: new Date().toISOString() } : {}) });
-  return { vessels: changed.length, messages: tracker.messages, error: result.error };
+  return { vessels: changed.length, messages: tracker.messages, frames: result.frames, error: result.error };
 }
 
 /**
@@ -79,13 +80,16 @@ export async function refresh(): Promise<RefreshResult> {
   ]);
   await s.putMeta({ lastRefresh: new Date().toISOString() });
   await s.prune(KEEP_MS);
-  return {
+  const result: RefreshResult = {
     ran: true,
     items: news.items,
     sourcesOk: news.ok,
     vessels: ships?.vessels,
     aisMessages: ships?.messages,
+    aisFrames: ships?.frames,
     aisError: ships?.error,
     ms: Date.now() - started,
   };
+  console.log("refresh", JSON.stringify(result));
+  return result;
 }

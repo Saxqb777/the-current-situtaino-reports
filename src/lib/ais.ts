@@ -45,17 +45,19 @@ export class AisTracker {
   }
 
   /** Listens to the live feed for `ms` milliseconds, then disconnects. */
-  sample(apiKey: string, ms: number): Promise<{ connected: boolean; error?: string }> {
+  sample(apiKey: string, ms: number): Promise<{ connected: boolean; error?: string; frames: number }> {
     return new Promise((resolve) => {
+      const started = Date.now();
       let connected = false;
       let settled = false;
+      let frames = 0;
       const ws = new WebSocket(ENDPOINT);
       const finish = (error?: string) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         try { ws.close(); } catch { /* already closed */ }
-        resolve({ connected, error });
+        resolve({ connected, error, frames });
       };
       const timer = setTimeout(() => finish(), ms);
       ws.on("open", () => {
@@ -67,6 +69,7 @@ export class AisTracker {
         }));
       });
       ws.on("message", (buf) => {
+        frames++;
         try {
           const msg = JSON.parse(buf.toString()) as AisMessage & { error?: string };
           if (msg.error) return finish(msg.error);
@@ -74,7 +77,12 @@ export class AisTracker {
         } catch { /* skip malformed frames */ }
       });
       ws.on("error", (err) => finish(err.message));
-      ws.on("close", () => finish(connected ? undefined : "connection closed"));
+      // The feed hangs up on a bad key or subscription, sometimes without saying why.
+      ws.on("close", (code, reason) => {
+        const why = `code ${code}${reason.length ? `, ${reason.toString().slice(0, 120)}` : ""}`;
+        if (!connected) return finish(`connection closed (${why})`);
+        finish(`feed closed after ${Math.round((Date.now() - started) / 1000)} s (${why})`);
+      });
     });
   }
 
