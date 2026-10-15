@@ -16,17 +16,22 @@ import Compass from "./Compass";
 export interface ChartHandle {
   /** PNG of the chart as it looks now, for the PDF briefing. */
   snapshot(): string | null;
-  flyToZone(zone: ZoneId | null): void;
-  flyTo(position: [number, number], zoom?: number): void;
+  /** `inset`: pixels covered at the bottom when the flight lands, if not the current coveredBottom. */
+  flyToZone(zone: ZoneId | null, inset?: number): void;
+  flyTo(position: [number, number], zoom?: number, inset?: number): void;
 }
 
 interface Props {
   events: WatchEvent[];
   vessels: VesselLite[];
+  /** Recent positions of the selected ship. */
+  track: [number, number][] | null;
   layers: Layers;
   selection: Selection;
   hoverEvent: string | null;
   theme: string;
+  /** Pixels of the chart covered at the bottom, by the phone's sheet, so flights land in the visible part. */
+  coveredBottom?: number;
   onSelect(sel: Selection): void;
   onHoverEvent(id: string | null): void;
   handle?: React.Ref<ChartHandle>;
@@ -36,6 +41,8 @@ interface Props {
 maplibregl.setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
 const HOME: [[number, number], [number, number]] = [[31.5, 3.5], [61.5, 30.8]];
+/** How far from a tap a ship, port or report still counts as tapped. */
+const TAP_SLOP = 14;
 
 /** Ports named at the widest zoom; the rest appear as you zoom in. */
 const MAJOR_PORTS = new Set([
@@ -137,7 +144,7 @@ function addIcons(map: MLMap, t: Record<string, string>) {
 const SEV_RANK = { low: 0, elevated: 1, high: 2, critical: 3 } as const;
 
 export default function ChartMap(
-  { events, vessels, layers, selection, hoverEvent, theme, onSelect, onHoverEvent, handle, children }: Props,
+  { events, vessels, track, layers, selection, hoverEvent, theme, coveredBottom = 0, onSelect, onHoverEvent, handle, children }: Props,
 ) {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
@@ -145,6 +152,9 @@ export default function ChartMap(
   const [zoomBand, setZoomBand] = useState<"far" | "near">("far");
   const handlers = useRef({ onSelect, onHoverEvent });
   handlers.current = { onSelect, onHoverEvent };
+  const covered = useRef(coveredBottom);
+  covered.current = coveredBottom;
+  const padding = (inset?: number) => ({ top: 0, left: 0, right: 0, bottom: inset ?? covered.current });
 
   useImperativeHandle(handle, () => ({
     snapshot() {
@@ -153,14 +163,14 @@ export default function ChartMap(
       m.triggerRepaint();
       return m.getCanvas().toDataURL("image/png");
     },
-    flyToZone(zone) {
+    flyToZone(zone, inset) {
       const m = mapRef.current;
       if (!m) return;
-      if (!zone) m.fitBounds(HOME, { padding: 30, duration: 1400 });
-      else m.flyTo({ center: ZONE_BY_ID[zone].center, zoom: ZONE_BY_ID[zone].zoom, duration: 1600, essential: true });
+      if (!zone) m.fitBounds(HOME, { padding: { top: 30, left: 30, right: 30, bottom: 30 + (inset ?? covered.current) }, absolutePadding: true, duration: 1400 });
+      else m.flyTo({ center: ZONE_BY_ID[zone].center, zoom: ZONE_BY_ID[zone].zoom, padding: padding(inset), duration: 1600, essential: true });
     },
-    flyTo(position, zoom = 7.5) {
-      mapRef.current?.flyTo({ center: position, zoom: Math.max(zoom, mapRef.current.getZoom()), duration: 1200 });
+    flyTo(position, zoom = 7.5, inset) {
+      mapRef.current?.flyTo({ center: position, zoom: Math.max(zoom, mapRef.current.getZoom()), padding: padding(inset), duration: 1200 });
     },
   }), []);
 
@@ -172,8 +182,9 @@ export default function ChartMap(
       container: host.current,
       style: baseStyle(t),
       bounds: HOME,
-      fitBoundsOptions: { padding: 30 },
-      minZoom: 3.4,
+      fitBoundsOptions: { padding: { top: 30, left: 30, right: 30, bottom: 30 + covered.current } },
+      // Low enough that a portrait phone can show the whole region at once.
+      minZoom: 2.8,
       maxBounds: [[18, -10], [76, 40]],
       maxZoom: 12,
       dragRotate: false,
@@ -184,6 +195,10 @@ export default function ChartMap(
     });
     m.touchZoomRotate.disableRotation();
     m.on("load", () => {
+      // Start with the attribution folded to its (i) button so it never covers the chart.
+      m.getContainer().querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
+      // Re-fit now that the phone sheet has been measured, so the whole region sits above it.
+      if (covered.current) m.fitBounds(HOME, { padding: { top: 30, left: 30, right: 30, bottom: 30 + covered.current }, absolutePadding: true, duration: 0 });
       addIcons(m, t);
       (m.getSource("areas") as GeoJSONSource).setData({
         type: "FeatureCollection",
@@ -197,8 +212,20 @@ export default function ChartMap(
       setMap(m);
     });
 
-    const pick = (layer: string, e: MapMouseEvent) =>
-      m.queryRenderedFeatures(e.point, { layers: [layer] })[0];
+    // Nearest feature within a finger's width of the tap, not only what is exactly under it.
+    const pick = (layer: string, e: MapMouseEvent) => {
+      const { x, y } = e.point;
+      const found = m.queryRenderedFeatures([[x - TAP_SLOP, y - TAP_SLOP], [x + TAP_SLOP, y + TAP_SLOP]], { layers: [layer] });
+      let best: (typeof found)[number] | undefined;
+      let bestD = Infinity;
+      for (const f of found) {
+        if (f.geometry.type !== "Point") continue;
+        const p = m.project(f.geometry.coordinates as [number, number]);
+        const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+        if (d < bestD) { bestD = d; best = f; }
+      }
+      return best;
+    };
 
     m.on("click", (e: MapMouseEvent) => {
       const ev = m.getLayer("events") && pick("events", e);
@@ -279,13 +306,12 @@ export default function ChartMap(
   // Selected ship's track
   useEffect(() => {
     if (!map) return;
-    const v = selection?.kind === "vessel" ? vessels.find((x) => x.mmsi === selection.id) : undefined;
     (map.getSource("track") as GeoJSONSource).setData(
-      v && v.track.length > 1
-        ? { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: v.track } }] }
+      selection?.kind === "vessel" && track && track.length > 1
+        ? { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: track } }] }
         : empty(),
     );
-  }, [map, selection, vessels]);
+  }, [map, selection, track]);
 
   // Hover and selection glow on incidents
   const prevHot = useRef<string[]>([]);
@@ -302,7 +328,7 @@ export default function ChartMap(
 
   return (
     <div className="chart" data-zoom={zoomBand}>
-      <div ref={host} className="chart__map" role="region" aria-label="Live chart of the Gulf, Red Sea and Gulf of Aden" />
+      <div ref={host} className="chart__map" data-tour="chart" role="region" aria-label="Live chart of the Gulf, Red Sea and Gulf of Aden" />
       {map && <ChartLabels map={map} showPorts={layers.ports} zoomBand={zoomBand} />}
       {map && <Neatline map={map} />}
       <Compass />

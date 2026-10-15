@@ -1,0 +1,22 @@
+name: Refresh live data
+
+# Keeps reports and ship positions current when nobody has the site open.
+# Vercel's free plan only allows a daily cron, so GitHub's scheduler asks
+# instead. The site refreshes at most once every five minutes whoever asks,
+# so an extra or late run does no harm.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Ask the site to refresh
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://sea-lanes-watch.vercel.app' }}
+        run: curl -fsS --retry 2 --max-time 150 "$SITE_URL/api/refresh"

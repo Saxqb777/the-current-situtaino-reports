@@ -120,7 +120,7 @@ export default function DetailCard({ selection, events, vessels, aisConfigured, 
 function Card({ kicker, title, mark, onClose, children }: { kicker: string; title: string; mark?: React.ReactNode; onClose(): void; children: React.ReactNode }) {
   return (
     <section className="card" aria-label={title}>
-      <header className="card__head">
+      <header className="card__head" data-sheet-head="" data-sheet-drag="">
         <div>
           <div className="card__kicker" style={{ display: "flex", alignItems: "center", gap: 6 }}>{mark}{kicker}</div>
           <h3 className="card__title">{title}</h3>

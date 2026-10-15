@@ -10,14 +10,13 @@ export interface VesselLite {
   unifeeder: boolean;
   lastSeen: string;
   destination: string;
-  track: [number, number][];
 }
 
-type Row = [number, string, number, number, number, number, number, number, string, string, [number, number][]];
+type Row = [number, string, number, number, number, number, number, number, string, string];
 
 export function decodeVessels(rows: Row[]): VesselLite[] {
-  return rows.map(([mmsi, name, lon, lat, course, sog, type, flags, lastSeen, destination, track]) => ({
-    mmsi, name, lon, lat, course, sog, type, dark: Boolean(flags & 1), unifeeder: Boolean(flags & 2), lastSeen, destination, track,
+  return rows.map(([mmsi, name, lon, lat, course, sog, type, flags, lastSeen, destination]) => ({
+    mmsi, name, lon, lat, course, sog, type, dark: Boolean(flags & 1), unifeeder: Boolean(flags & 2), lastSeen, destination,
   }));
 }
 

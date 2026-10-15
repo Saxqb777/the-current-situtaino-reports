@@ -15,7 +15,7 @@ interface Props {
 export default function WatchStrip({ zones, active, aisLive, onZone }: Props) {
   const byId = Object.fromEntries(zones.map((z) => [z.zone, z]));
   return (
-    <nav className="strip" aria-label="Watch zones">
+    <nav className="strip" aria-label="Watch zones" data-tour="zones">
       {ZONE_ORDER.map((id) => {
         const z: ZoneSummary = byId[id] ?? { zone: id, level: "low", events24h: 0, vessels: 0, dark: 0, transits24h: null, headline: null };
         const meta = SEVERITY_META[z.level];
@@ -23,6 +23,7 @@ export default function WatchStrip({ zones, active, aisLive, onZone }: Props) {
           <button
             key={id}
             className="watch"
+            data-tour={`zone-${id}`}
             aria-pressed={active === id}
             onClick={() => onZone(active === id ? null : id)}
             title={z.headline ?? "No reports in the last 24 hours"}

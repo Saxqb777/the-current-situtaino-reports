@@ -108,6 +108,8 @@ export interface ZoneSummary {
 export interface Snapshot {
   generatedAt: string;
   sample: boolean;
+  /** When news and ships were last fetched; null before the first refresh. */
+  lastRefresh: string | null;
   ais: { connected: boolean; configured: boolean; vessels: number; lastMessage: string | null };
   zones: ZoneSummary[];
   events: WatchEvent[];

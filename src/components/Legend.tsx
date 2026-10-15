@@ -25,8 +25,8 @@ export default function Legend({ layers, setLayers, counts, aisConfigured }: Pro
   );
   const ais = (n: number) => (aisConfigured ? n : "off");
   return (
-    <div className="chart__legend">
-      <h3>Chart layers</h3>
+    <div className="chart__legend" data-tour="layers">
+      <h3 data-sheet-head="" data-sheet-drag="">Chart layers</h3>
       {row("events", "Reports", <svg width="16" height="16" viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="15" r="11" fill="none" stroke="var(--sev-high)" strokeWidth="2" strokeDasharray="3 2.4" /><circle cx="15" cy="15" r="6" fill="var(--sev-high)" /></svg>, counts.events)}
       {row("ships", "Ships", <Ship color="var(--ship-tanker)" />, ais(counts.ships))}
       {row("unifeeder", "Unifeeder fleet", <Ship color="var(--olive)" />, ais(counts.unifeeder))}

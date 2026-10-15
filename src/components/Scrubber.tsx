@@ -33,7 +33,7 @@ export default function Scrubber({ events, now, asOf, setAsOf }: Props) {
   }).filter((t) => t > start && (t - start) / (SPAN_H * 3600_000) < 0.96);
 
   return (
-    <div className="scrub">
+    <div className="scrub" data-tour="time">
       <div className="scrub__label">
         {asOf ? "Showing" : "Live"}
         <b>{asOf ? `${utcDate(new Date(asOf).toISOString())} ${utcTime(new Date(asOf).toISOString())}` : "Now"}</b>

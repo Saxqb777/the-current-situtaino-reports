@@ -10,9 +10,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Sea Lanes Watch",
   description: "Live situation report for GCC ports, the Strait of Hormuz, the Red Sea and Bab el-Mandeb.",
+  appleWebApp: { capable: true, title: "Sea Lanes", statusBarStyle: "default" },
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1 };
+// viewport-fit=cover lets the phone layout reach under the notch and home bar; safe-area padding keeps controls clear.
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#f8faf8" };
 
 // Applies the saved theme and text size before first paint, so there is no flash.
 const prefs = `try{var t=localStorage.getItem("slw-theme");if(t)document.documentElement.dataset.theme=t;var s=localStorage.getItem("slw-text");if(s)document.documentElement.dataset.text=s}catch(e){}`;

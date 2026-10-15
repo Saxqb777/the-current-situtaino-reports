@@ -28,12 +28,18 @@ interface Props {
   sources: SourceHealth[];
   onSelect(id: string): void;
   onHover(id: string | null): void;
+  /** "sheet" is the phone layout: the title bar drags the sheet and the zone filter lives in the zone rail. */
+  variant?: "panel" | "sheet";
+  /** Phone sheet pulled down: show the newest important report under the title. */
+  peek?: boolean;
 }
 
 export default function Log(p: Props) {
   const { events, filters, setFilters } = p;
+  const sheet = p.variant === "sheet";
   const listRef = useRef<HTMLOListElement>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [showFilters, setShowFilters] = useState(!sheet);
 
   // Bring the selected entry into view when it was picked on the chart.
   useEffect(() => {
@@ -43,52 +49,92 @@ export default function Log(p: Props) {
   }, [p.selected]);
 
   const okSources = p.sources.filter((s) => s.ok).length;
+  const checked = p.sources.some((s) => s.lastChecked);
+  const status = !p.live
+    ? "Reconnecting"
+    : !checked
+      ? "Reading sources"
+      : okSources === 0
+        ? "Sources unreachable"
+        : `Live · ${okSources} of ${p.sources.length} sources`;
+  const activeFilters = (filters.minSeverity !== "low" ? 1 : 0) + (filters.officialOnly ? 1 : 0) + (sheet && filters.zone ? 1 : 0);
+  const latest = events.find((e) => e.severity === "critical" || e.severity === "high") ?? events[0];
   let lastDay = "";
 
   return (
-    <aside className="log" aria-label="Situation log">
-      <div className="log__head">
-        <div className="log__titlebar">
-          <h2 className="log__title">Log</h2>
+    <aside className={sheet ? "log log--sheet" : "log"} aria-label="Situation log" data-tour="log">
+      <div className="log__head" data-sheet-head="">
+        <div className="log__titlebar" data-sheet-drag="">
+          <h2 className="log__title">Log <span className="log__count mono">{events.length}</span></h2>
           <span className="log__live" data-state={p.live && okSources > 0 ? "on" : "off"}>
             <i aria-hidden="true" />
-            {!p.live ? "Reconnecting" : okSources === 0 && p.sources.some((s) => s.lastChecked) ? "Sources unreachable" : `Live · ${okSources} of ${p.sources.length} sources`}
+            {status}
           </span>
         </div>
-        <div className="filters">
-          <div className="seg" role="group" aria-label="Zone">
-            <button aria-pressed={filters.zone === null} onClick={() => setFilters({ ...filters, zone: null })}>All</button>
-            {ZONE_ORDER.map((z) => (
-              <button key={z} aria-pressed={filters.zone === z} onClick={() => setFilters({ ...filters, zone: filters.zone === z ? null : z })}>
-                {ZONE_BY_ID[z].short}
-              </button>
-            ))}
-          </div>
-          <div className="filters__row">
-            <div className="seg" role="group" aria-label="Lowest severity shown">
-              {SEVERITIES.map((s) => (
-                <button key={s} aria-pressed={filters.minSeverity === s} onClick={() => setFilters({ ...filters, minSeverity: s })}>
-                  {s === "low" ? "All levels" : `${SEVERITY_META[s].label}+`}
-                </button>
-              ))}
-            </div>
-            <label className="check">
-              <input type="checkbox" checked={filters.officialOnly} onChange={(e) => setFilters({ ...filters, officialOnly: e.target.checked })} />
-              Official reports only
-            </label>
-          </div>
-          <div className="filters__row">
-            <input
-              className="filters__search"
-              type="search"
-              placeholder="Search ships, ports, carriers"
-              aria-label="Search the log"
-              value={filters.query}
-              onChange={(e) => setFilters({ ...filters, query: e.target.value })}
-            />
-            <button className="tool" onClick={p.pickAllShown} disabled={!events.length}>Select shown</button>
-          </div>
+        {sheet && p.peek && latest && (
+          <button className="log__latest" data-sheet-drag="" onClick={() => p.onSelect(latest.id)} style={{ "--entry-sev": SEVERITY_META[latest.severity].color } as React.CSSProperties}>
+            <span className="log__latest-sev">{SEVERITY_META[latest.severity].label}</span>
+            <span className="log__latest-title">{latest.title}</span>
+            <span className="log__latest-ago mono">{ago(latest.lastSeen)}</span>
+          </button>
+        )}
+      </div>
+
+      <div className="filters" data-tour="filters">
+        <div className="filters__row">
+          <input
+            className="filters__search"
+            type="search"
+            enterKeyHint="search"
+            placeholder="Search ships, ports, carriers"
+            aria-label="Search the log"
+            value={filters.query}
+            onChange={(e) => setFilters({ ...filters, query: e.target.value })}
+          />
+          {sheet && (
+            <button className="tool filters__toggle" aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>
+              Filters{activeFilters > 0 && <span className="tool__count">{activeFilters}</span>}
+            </button>
+          )}
+          {!sheet && <button className="tool" onClick={p.pickAllShown} disabled={!events.length}>Select shown</button>}
         </div>
+        {showFilters && (
+          <>
+            {!sheet && (
+              <div className="seg" role="group" aria-label="Zone">
+                <button aria-pressed={filters.zone === null} onClick={() => setFilters({ ...filters, zone: null })}>All</button>
+                {ZONE_ORDER.map((z) => (
+                  <button key={z} aria-pressed={filters.zone === z} onClick={() => setFilters({ ...filters, zone: filters.zone === z ? null : z })}>
+                    {ZONE_BY_ID[z].short}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="filters__row">
+              <div className="seg" role="group" aria-label="Lowest level shown">
+                {SEVERITIES.map((s) => (
+                  <button key={s} aria-pressed={filters.minSeverity === s} onClick={() => setFilters({ ...filters, minSeverity: s })}>
+                    {s === "low" ? "All levels" : `${SEVERITY_META[s].label}+`}
+                  </button>
+                ))}
+              </div>
+              <label className="check">
+                <input type="checkbox" checked={filters.officialOnly} onChange={(e) => setFilters({ ...filters, officialOnly: e.target.checked })} />
+                Official only
+              </label>
+            </div>
+            {sheet && (
+              <div className="filters__row">
+                {filters.zone && (
+                  <button className="tool" onClick={() => setFilters({ ...filters, zone: null })}>
+                    Zone: {ZONE_BY_ID[filters.zone].short} <span aria-hidden="true">×</span><span className="sr-only">Clear zone</span>
+                  </button>
+                )}
+                <button className="tool" onClick={p.pickAllShown} disabled={!events.length}>Tick all shown</button>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <ol className="log__list" ref={listRef}>
@@ -96,15 +142,17 @@ export default function Log(p: Props) {
           <li className="empty">
             {p.total === 0 ? (
               <>
-                <h3>No reports yet</h3>
-                <p>The log fills as sources are read. Source status:</p>
-                <ul className="health">
-                  {p.sources.map((s) => (
-                    <li key={s.id} data-ok={s.ok} title={s.error}>
-                      <i aria-hidden="true" />{s.name}{!s.ok && s.lastChecked ? " · unreachable" : !s.lastChecked ? " · waiting" : ""}
-                    </li>
-                  ))}
-                </ul>
+                <h3>{checked ? "No reports yet" : "Reading sources"}</h3>
+                <p>{checked ? "The log fills as sources are read. Source status:" : "The first reports arrive within a minute."}</p>
+                {checked && (
+                  <ul className="health">
+                    {p.sources.map((s) => (
+                      <li key={s.id} data-ok={s.ok} title={s.error}>
+                        <i aria-hidden="true" />{s.name}{!s.ok && s.lastChecked ? " · unreachable" : !s.lastChecked ? " · waiting" : ""}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </>
             ) : (
               <>
@@ -114,11 +162,12 @@ export default function Log(p: Props) {
             )}
           </li>
         )}
-        {events.map((e) => {
+        {events.map((e, i) => {
           const day = utcDate(e.lastSeen);
           const header = day !== lastDay ? ((lastDay = day), <li key={`d-${day}`} className="log__day">{day} · UTC</li>) : null;
           const meta = SEVERITY_META[e.severity];
           const names = [...new Set(e.sources.map((s) => s.publisher || s.name))];
+          const isPicked = p.picked.has(e.id);
           return [
             header,
             <li
@@ -148,11 +197,12 @@ export default function Log(p: Props) {
                   {names.length > 1 ? `${names.length} sources: ` : ""}{names.slice(0, 3).join(", ")}{names.length > 3 ? ` +${names.length - 3}` : ""}
                 </span>
               </button>
-              <div className="entry__pick">
-                <input type="checkbox" checked={p.picked.has(e.id)} onChange={() => p.togglePick(e.id)} aria-label={`Add "${e.title}" to the briefing`} />
-              </div>
+              <label className="entry__pick" title={isPicked ? "In the briefing" : "Add to the briefing"}>
+                <input type="checkbox" checked={isPicked} onChange={() => p.togglePick(e.id)} aria-label={`Add "${e.title}" to the briefing`} />
+                <span className="entry__box" aria-hidden="true" data-tour={i === 0 ? "pick" : undefined} />
+              </label>
               {open === e.id && (
-                <ul className="entry__links" style={{ gridColumn: "2 / 4" }}>
+                <ul className="entry__links">
                   {e.sources.map((s) => (
                     <li key={s.url}>
                       <a href={s.url} target="_blank" rel="noreferrer">{s.publisher || s.name}</a>
