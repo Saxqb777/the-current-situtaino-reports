@@ -51,6 +51,7 @@ export class AisTracker {
       let connected = false;
       let settled = false;
       let frames = 0;
+      let first = "";
       const ws = new WebSocket(ENDPOINT);
       const finish = (error?: string) => {
         if (settled) return;
@@ -59,7 +60,9 @@ export class AisTracker {
         try { ws.close(); } catch { /* already closed */ }
         resolve({ connected, error, frames });
       };
-      const timer = setTimeout(() => finish(), ms);
+      // A quiet window is normal for a short sample, but if the feed only sent
+      // something that was not a ship, show what it was.
+      const timer = setTimeout(() => finish(frames > 0 && this.messages === 0 ? `no ships; feed sent: ${first}` : undefined), ms);
       ws.on("open", () => {
         connected = true;
         ws.send(JSON.stringify({
@@ -70,9 +73,11 @@ export class AisTracker {
       });
       ws.on("message", (buf) => {
         frames++;
+        const text = buf.toString();
+        if (frames === 1) first = text.split(apiKey).join("[key]").slice(0, 200);
         try {
-          const msg = JSON.parse(buf.toString()) as AisMessage & { error?: string };
-          if (msg.error) return finish(msg.error);
+          const msg = JSON.parse(text) as AisMessage & { error?: string; Error?: string };
+          if (msg.error || msg.Error) return finish(msg.error || msg.Error);
           this.ingest(msg);
         } catch { /* skip malformed frames */ }
       });
