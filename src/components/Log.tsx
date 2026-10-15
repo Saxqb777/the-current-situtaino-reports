@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ZONE_BY_ID } from "@/lib/geo";
 import type { Severity, SourceHealth, WatchEvent, ZoneId } from "@/lib/types";
 import { SEVERITIES } from "@/lib/types";
-import { SEVERITY_META, ZONE_ORDER, ago, utcDate, utcTime } from "@/lib/ui";
+import { SEVERITY_META, ZONE_ORDER, ago, gstDate, gstTime } from "@/lib/ui";
 
 export interface LogFilters {
   zone: ZoneId | null;
@@ -173,8 +173,8 @@ export default function Log(p: Props) {
           </li>
         )}
         {events.map((e, i) => {
-          const day = utcDate(e.lastSeen);
-          const header = day !== lastDay ? ((lastDay = day), <li key={`d-${day}`} className="log__day">{day} · UTC</li>) : null;
+          const day = gstDate(e.lastSeen);
+          const header = day !== lastDay ? ((lastDay = day), <li key={`d-${day}`} className="log__day">{day} · GST</li>) : null;
           const meta = SEVERITY_META[e.severity];
           const names = [...new Set(e.sources.map((s) => s.publisher || s.name))];
           const isPicked = p.picked.has(e.id);
@@ -192,7 +192,7 @@ export default function Log(p: Props) {
               onMouseLeave={() => p.onHover(null)}
             >
               <div className="entry__time">
-                {utcTime(e.lastSeen)}
+                {gstTime(e.lastSeen)}
                 <small>{ago(e.lastSeen)}</small>
               </div>
               <button className="entry__main" onClick={() => { p.onSelect(e.id); setOpen(open === e.id ? null : e.id); }} aria-expanded={open === e.id}>
@@ -216,7 +216,7 @@ export default function Log(p: Props) {
                   {e.sources.map((s) => (
                     <li key={s.url}>
                       <a href={s.url} target="_blank" rel="noreferrer">{s.publisher || s.name}</a>
-                      <span className="card__meta"> · {utcTime(s.publishedAt)} UTC{s.publisher ? ` · via ${s.name}` : ""}</span>
+                      <span className="card__meta"> · {gstTime(s.publishedAt)} GST{s.publisher ? ` · via ${s.name}` : ""}</span>
                     </li>
                   ))}
                   {e.tags.length > 0 && <li className="card__meta">Tags: {e.tags.join(", ")}</li>}

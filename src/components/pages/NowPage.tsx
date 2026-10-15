@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { PORTS, PORT_BY_ID, ZONE_BY_ID } from "@/lib/geo";
 import { PORTWATCH_PORT, callsBand } from "@/lib/portwatch";
 import { SEVERITIES, type Severity, type ZoneId, type ZoneSummary } from "@/lib/types";
-import { SEVERITY_META, ZONE_ORDER, ago, agoMin, sourceLine, utcDate, utcTime } from "@/lib/ui";
+import { SEVERITY_META, ZONE_ORDER, ago, agoMin, sourceLine, gstDate, gstTime } from "@/lib/ui";
 import { type Seen, bottomLine, verdict, worstLevel } from "@/lib/verdict";
 import { LEVEL_WORD, allWaits, daysShort, gccWaits } from "@/lib/waits";
 import type { Go, Model } from "../model";
@@ -67,7 +67,7 @@ export default function NowPage({ m, go }: { m: Model; go: Go }) {
       <header className="hero hero--verdict" data-tone={TONE[worst]}>
         <p className="kicker mono">
           <i className="kicker__live" data-on={m.live} aria-hidden="true" />
-          Situation report · {m.now ? `${utcDate(clock)} · ${utcTime(clock)} UTC` : "loading"}
+          Situation report · {m.now ? `${gstDate(clock)} · ${gstTime(clock)} GST` : "loading"}
         </p>
         <h1 className="verdict" data-tour="now-verdict">
           {headline.map((seg, i) => (seg.level ? <em key={i} data-level={seg.level}>{seg.text}</em> : <span key={i}>{seg.text}</span>))}
@@ -86,7 +86,7 @@ export default function NowPage({ m, go }: { m: Model; go: Go }) {
         )}
         <SinceLast cur={seen} />
         <p className="hero__meta mono">
-          {st ? <>Hormuz crisis day {st.dayCount}, since {utcDate(`${st.crisisStart}T00:00:00Z`)} {st.crisisStart.slice(0, 4)} · </> : null}
+          {st ? <>Hormuz crisis day {st.dayCount}, since {gstDate(`${st.crisisStart}T00:00:00Z`)} {st.crisisStart.slice(0, 4)} · </> : null}
           {m.snap.sources.filter((x) => x.ok).length} of {m.snap.sources.length} sources answering
         </p>
         <div className="hero__acts">

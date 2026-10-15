@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { HormuzBundle } from "@/lib/hormuz";
 import type { WatchEvent, ZoneSummary } from "@/lib/types";
-import { SEVERITY_META, utcTime } from "@/lib/ui";
+import { GST_MS, SEVERITY_META, gstTime } from "@/lib/ui";
 
 interface Props {
   events: WatchEvent[];
@@ -54,7 +54,8 @@ export default function BriefingForm({ events, zones, hz, chartImage, onDone, on
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `sea-lanes-briefing-${generatedAt.slice(0, 16).replace(/[:T]/g, "-")}.pdf`;
+      // Named by the Dubai time it was made.
+      a.download = `sea-lanes-briefing-${new Date(Date.parse(generatedAt) + GST_MS).toISOString().slice(0, 16).replace(/[:T]/g, "-")}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -98,7 +99,7 @@ export default function BriefingForm({ events, zones, hz, chartImage, onDone, on
         <ul className="dialog__picked">
           {events.map((e) => (
             <li key={e.id} data-removable={Boolean(onRemove)}>
-              <span className="mono" style={{ color: SEVERITY_META[e.severity].color }}>{utcTime(e.lastSeen)}</span>
+              <span className="mono" style={{ color: SEVERITY_META[e.severity].color }}>{gstTime(e.lastSeen)}</span>
               <span>{e.title}</span>
               {onRemove && (
                 <button className="dialog__remove" onClick={() => onRemove(e.id)} aria-label={`Remove "${e.title}"`}>×</button>

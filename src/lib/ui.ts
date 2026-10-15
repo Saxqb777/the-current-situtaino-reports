@@ -17,13 +17,42 @@ export const KIND_LABEL: Record<SourceKind, string> = {
   aggregator: "News search",
 };
 
-export function utcTime(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+/**
+ * Every time on screen and in the PDF is Gulf Standard Time, Dubai's clock:
+ * UTC+4 all year, no daylight saving. Data stays in UTC; only what people
+ * read is shifted. A fixed offset read with the UTC getters gives the same
+ * text on the server and in any browser, whatever its own time zone.
+ */
+export const GST_MS = 4 * 3600_000;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const gst = (t: string | number) => new Date((typeof t === "number" ? t : Date.parse(t)) + GST_MS);
+const two = (n: number) => String(n).padStart(2, "0");
+
+/** "14:16", Dubai time. */
+export function gstTime(t: string | number): string {
+  const d = gst(t);
+  return `${two(d.getUTCHours())}:${two(d.getUTCMinutes())}`;
 }
 
-export function utcDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+/** "14:00", Dubai time, for hourly charts. */
+export function gstHour(t: string | number): string {
+  return `${two(gst(t).getUTCHours())}:00`;
+}
+
+/** "15 Oct", the day in Dubai. */
+export function gstDate(t: string | number): string {
+  const d = gst(t);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+
+/** "15 Oct 2026", the day in Dubai. */
+export function gstLongDate(t: string | number): string {
+  return `${gstDate(t)} ${gst(t).getUTCFullYear()}`;
+}
+
+/** Midnight in Dubai at the start of the moment's day, as a timestamp. */
+export function gstMidnight(t: number): number {
+  return Math.floor((t + GST_MS) / 86_400_000) * 86_400_000 - GST_MS;
 }
 
 export function ago(iso: string, now = Date.now()): string {

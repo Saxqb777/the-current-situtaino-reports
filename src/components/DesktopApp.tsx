@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { ZONE_BY_ID } from "@/lib/geo";
-import { SEVERITY_META, utcDate, utcTime } from "@/lib/ui";
+import { SEVERITY_META, gstDate, gstTime } from "@/lib/ui";
 import DetailCard from "./DetailCard";
 import ExportDialog from "./ExportDialog";
 import Legend from "./Legend";
@@ -61,8 +61,8 @@ export default function DesktopApp({ m }: { m: Model }) {
           </nav>
           <div className="mast__spacer" />
           <div className="mast__clock mono" aria-live="off" style={{ visibility: m.now ? "visible" : "hidden" }}>
-            <b>{utcTime(clock)} UTC</b>
-            <small>{utcDate(clock)} · Gulf {new Date(m.now + 4 * 3600_000).toISOString().slice(11, 16)} GST</small>
+            <b>{gstTime(clock)} GST</b>
+            <small>{gstDate(clock)} · Dubai time</small>
           </div>
           <div className="mast__tools">
             <div className="mast__display" data-tour="display">
@@ -179,7 +179,7 @@ export function Flash({ m, onOpen }: { m: Model; onOpen?(id: string): void }) {
           <span className="flash__sev" style={{ background: SEVERITY_META[f.severity].color }}>{SEVERITY_META[f.severity].label}</span>
           <button className="flash__text" onClick={() => { (onOpen ?? ((id) => m.select({ kind: "event", id })))(f.id); m.dismissFlash(); }}>
             <b>{f.title}</b>
-            <small>{f.zones.map((z) => ZONE_BY_ID[z].name).join(" / ")} · {utcTime(f.lastSeen)} UTC</small>
+            <small>{f.zones.map((z) => ZONE_BY_ID[z].name).join(" / ")} · {gstTime(f.lastSeen)} GST</small>
           </button>
           <button className="card__close" onClick={m.dismissFlash} aria-label="Dismiss">×</button>
         </>

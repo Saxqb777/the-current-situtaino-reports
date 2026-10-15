@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Selection } from "@/lib/client";
 import type { ZoneId } from "@/lib/types";
-import { utcDate, utcTime } from "@/lib/ui";
+import { gstDate, gstTime } from "@/lib/ui";
 import BriefingForm from "../BriefingForm";
 import DetailCard from "../DetailCard";
 import { Flash } from "../DesktopApp";
@@ -135,7 +135,6 @@ export default function PhoneApp({ m }: { m: Model }) {
   };
 
   const clock = new Date(m.now || 0).toISOString();
-  const gst = new Date(m.now + 4 * 3600_000).toISOString().slice(11, 16);
   const shownPanel: Panel = panel === "detail" && !m.selection ? "log" : panel;
 
   let content: React.ReactNode;
@@ -217,7 +216,7 @@ export default function PhoneApp({ m }: { m: Model }) {
         <div className="ptop__brand">
           <h1 className="ptop__title">Sea Lanes <span>Watch</span></h1>
           <div className="ptop__clock mono" style={{ visibility: m.now ? "visible" : "hidden" }}>
-            {utcTime(clock)} UTC · {gst} GST · {utcDate(clock)}
+            {gstTime(clock)} GST · {gstDate(clock)}
           </div>
         </div>
         <button className="ptop__btn" onClick={() => { setDisplayOpen(false); m.tour.start(); }} data-tour="tour-btn"><TourIcon /><span>Tour</span></button>
@@ -281,7 +280,7 @@ export default function PhoneApp({ m }: { m: Model }) {
               )}
               {!timeOpen && m.asOf !== null && (
                 <button className="pastchip" onClick={() => m.setAsOf(null)}>
-                  Showing {utcDate(new Date(m.asOf).toISOString())} {utcTime(new Date(m.asOf).toISOString())} UTC <b>Back to live</b>
+                  Showing {gstDate(m.asOf)} {gstTime(m.asOf)} GST <b>Back to live</b>
                 </button>
               )}
             </div>

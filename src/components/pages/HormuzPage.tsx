@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { HzShip } from "@/lib/hormuz";
 import { SEVERITIES, type Severity } from "@/lib/types";
-import { SEVERITY_META, ago, agoMin, flagName, sourceLine, tonnes, utcDate, utcTime } from "@/lib/ui";
+import { SEVERITY_META, ago, agoMin, flagName, sourceLine, tonnes, gstDate, gstTime } from "@/lib/ui";
 import type { Go, Model } from "../model";
 import SeverityMark from "../SeverityMark";
 import CountUp from "../viz/CountUp";
@@ -68,7 +68,7 @@ export default function HormuzPage({ m, go }: { m: Model; go: Go }) {
           Traffic at <em data-tone={tone}><CountUp value={st.pct} digits={0} />%</em> of normal
         </h1>
         <p className="hero__deck">
-          <b>{s.last24h.total} ships</b> crossed in the last 24 hours. This week averages <b>{fmt(st.ais7, 1)} a day</b>, against {fmt(st.baseline, 1)} a day before {utcDate(`${st.crisisStart}T00:00:00Z`)}. <b>{fmt(waitingTotal)} ships</b> are waiting at anchor, {fmt(s.fleet.waitingGulf)} on the Gulf side and {fmt(s.fleet.waitingOman)} on the Oman side.
+          <b>{s.last24h.total} ships</b> crossed in the last 24 hours. This week averages <b>{fmt(st.ais7, 1)} a day</b>, against {fmt(st.baseline, 1)} a day before {gstDate(`${st.crisisStart}T00:00:00Z`)}. <b>{fmt(waitingTotal)} ships</b> are waiting at anchor, {fmt(s.fleet.waitingGulf)} on the Gulf side and {fmt(s.fleet.waitingOman)} on the Oman side.
         </p>
         <div className="gate__ruler"><Ruler value={st.ais7} normal={st.baseline} unit="crossings a day" tone={tone === "ok" ? "ok" : tone === "warn" ? "warn" : "danger"} /></div>
         <div className="hero__acts">
@@ -243,7 +243,7 @@ export default function HormuzPage({ m, go }: { m: Model; go: Go }) {
                     <span className="xings__dir" data-dir={c.dir} aria-label={c.dir === "in" ? "Inbound" : "Outbound"}>{c.dir === "in" ? "IN" : "OUT"}</span>
                     <span className="xings__name">{c.name}</span>
                     <span className="xings__meta">{c.segmentLabel || c.type} · {c.flagName}{c.dwt ? ` · ${tonnes(c.dwt)}` : ""}</span>
-                    <span className="xings__time mono">{utcTime(new Date(c.t).toISOString())}<small>{ago(new Date(c.t).toISOString(), now)}</small></span>
+                    <span className="xings__time mono">{gstTime(c.t)}<small>{ago(new Date(c.t).toISOString(), now)}</small></span>
                   </button>
                 </li>
               ))}

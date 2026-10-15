@@ -5,6 +5,7 @@ import { type HzAreas, readSnapshot } from "./hormuz";
 import { store } from "./store";
 import { type CongestionDoc, type TerminalReading, daysShort, daysWord, diffShort, indexLevel, isLonger, portFigures, portWait } from "./waits";
 import type { ZoneSummary } from "./types";
+import { gstDate, gstHour, gstLongDate, gstMidnight, gstTime } from "./ui";
 import { bottomLine, changesSince, verdict, verdictText, worstLevel } from "./verdict";
 import { latestPerShip, spacing } from "./westgulf";
 
@@ -251,5 +252,21 @@ describe("our verdict", () => {
       "Arabian Gulf down to elevated, from high",
       "2 new serious reports",
     ]);
+  });
+});
+
+describe("Dubai time", () => {
+  it("writes every time four hours ahead of UTC, rolling the day at Dubai midnight", () => {
+    expect(gstTime("2026-10-15T10:16:00Z")).toBe("14:16");
+    expect(gstHour(Date.UTC(2026, 9, 15, 9))).toBe("13:00");
+    expect(gstDate("2026-10-15T19:59:00Z")).toBe("15 Oct");
+    expect(gstDate("2026-10-15T20:00:00Z")).toBe("16 Oct");
+    expect(gstTime("2026-10-15T20:30:00Z")).toBe("00:30");
+    expect(gstLongDate("2026-12-31T21:00:00Z")).toBe("1 Jan 2027");
+  });
+
+  it("finds midnight in Dubai", () => {
+    expect(new Date(gstMidnight(Date.UTC(2026, 9, 15, 10))).toISOString()).toBe("2026-10-14T20:00:00.000Z");
+    expect(new Date(gstMidnight(Date.UTC(2026, 9, 15, 21))).toISOString()).toBe("2026-10-15T20:00:00.000Z");
   });
 });

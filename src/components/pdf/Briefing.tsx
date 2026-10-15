@@ -3,6 +3,7 @@ import { PORT_BY_ID, ZONE_BY_ID } from "@/lib/geo";
 import type { HormuzBundle } from "@/lib/hormuz";
 import { PORTWATCH_PORT, callsBand } from "@/lib/portwatch";
 import type { Severity, WatchEvent, ZoneSummary } from "@/lib/types";
+import { gstLongDate, gstTime } from "@/lib/ui";
 import { ROUTE, verdict } from "@/lib/verdict";
 import { LEVEL_WORD, type PortWait, allWaits, daysWord, gccWaits } from "@/lib/waits";
 
@@ -145,7 +146,7 @@ function WaitsPage({ hz, mast, footer }: { hz: HormuzBundle; mast: React.ReactNo
     <Page size="A4" style={s.page}>
       <View style={s.bandTop} fixed />
       {mast}
-      <Text style={[s.kicker, { marginTop: 18 }]}>GCC port congestion{read ? ` · read ${day(read)} ${hhmm(read)} UTC` : ""}</Text>
+      <Text style={[s.kicker, { marginTop: 18 }]}>GCC port congestion{read ? ` · read ${day(read)} ${hhmm(read)} GST` : ""}</Text>
       <Text style={s.gateTitle}><Text style={{ color: longer ? BAND_C.low : C.ink }}>{longer} of {waits.length} ports</Text> wait longer than usual</Text>
       <Text style={s.statusSub}>{busy} busy and {moderate} moderate by congestion index, at their container terminals</Text>
       <View style={s.sectionHead}><Text style={s.kicker}>Longest waits now</Text></View>
@@ -281,8 +282,9 @@ function Mark({ level, size = 12 }: { level: Severity; size?: number }) {
   );
 }
 
-const hhmm = (iso: string) => new Date(iso).toISOString().slice(11, 16);
-const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+/** Dubai time throughout, like the site. */
+const hhmm = gstTime;
+const day = gstLongDate;
 
 export interface BriefingProps {
   title: string;
@@ -306,7 +308,7 @@ export function Briefing({ title, preparedFor, note, generatedAt, events, zones,
 
   const footer = (
     <View style={s.footer} fixed>
-      <Text>Sea Lanes Watch · Situation briefing · {day(generatedAt)} {hhmm(generatedAt)} UTC</Text>
+      <Text>Sea Lanes Watch · Situation briefing · {day(generatedAt)} {hhmm(generatedAt)} GST</Text>
       <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
     </View>
   );
@@ -322,7 +324,7 @@ export function Briefing({ title, preparedFor, note, generatedAt, events, zones,
       <Page size="A4" style={s.page}>
         <View style={s.bandTop} fixed />
         {mast}
-        <Text style={[s.kicker, { marginTop: 22 }]}>Situation briefing · {day(generatedAt)} · {hhmm(generatedAt)} UTC</Text>
+        <Text style={[s.kicker, { marginTop: 22 }]}>Situation briefing · {day(generatedAt)} · {hhmm(generatedAt)} GST</Text>
         <Text style={s.coverTitle}>{title}</Text>
         <Text style={s.coverVerdict}>
           {headline.map((seg, i) => <Text key={i} style={seg.level ? { color: C.sev[seg.level] } : {}}>{seg.text}</Text>)}
@@ -388,7 +390,7 @@ export function Briefing({ title, preparedFor, note, generatedAt, events, zones,
                 {e.sources.slice(0, 6).map((src) => (
                   <Text key={src.url} style={s.sourceLine}>
                     <Link src={src.url} style={s.sourceLink}>{src.publisher || src.name}</Link>
-                    {`  ${hhmm(src.publishedAt)} UTC${src.publisher ? ` · via ${src.name}` : ""}`}
+                    {`  ${hhmm(src.publishedAt)} GST${src.publisher ? ` · via ${src.name}` : ""}`}
                   </Text>
                 ))}
                 {e.sources.length > 6 ? <Text style={s.sourceLine}>+{e.sources.length - 6} more sources</Text> : null}

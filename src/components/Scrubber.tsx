@@ -2,7 +2,7 @@
 
 import type { WatchEvent } from "@/lib/types";
 import { SEVERITIES } from "@/lib/types";
-import { SEVERITY_META, utcDate, utcTime } from "@/lib/ui";
+import { SEVERITY_META, gstDate, gstMidnight, gstTime } from "@/lib/ui";
 
 const SPAN_H = 7 * 24;
 const BIN_H = 3;
@@ -26,17 +26,17 @@ export default function Scrubber({ events, now, asOf, setAsOf }: Props) {
   }
   const max = Math.max(1, ...bins.map((b) => b.n));
   const value = asOf ?? now;
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(now - (6 - i) * 24 * 3600_000);
-    d.setUTCHours(0, 0, 0, 0);
-    return d.getTime();
-  }).filter((t) => t > start && (t - start) / (SPAN_H * 3600_000) < 0.96);
+  // Day marks at midnight in Dubai, centred under the mark; one too near either end is left out so no date is cut off or crowded.
+  const days = Array.from({ length: 7 }, (_, i) => gstMidnight(now - (6 - i) * 24 * 3600_000)).filter((t) => {
+    const at = (t - start) / (SPAN_H * 3600_000);
+    return at > 0.04 && at < 0.93;
+  });
 
   return (
     <div className="scrub" data-tour="time">
       <div className="scrub__label">
         {asOf ? "Showing" : "Live"}
-        <b>{asOf ? `${utcDate(new Date(asOf).toISOString())} ${utcTime(new Date(asOf).toISOString())}` : "Now"}</b>
+        <b>{asOf ? `${gstDate(asOf)} ${gstTime(asOf)} GST` : "Now"}</b>
       </div>
       <div className="scrub__track">
         <div className="scrub__bars" aria-hidden="true">
@@ -51,7 +51,7 @@ export default function Scrubber({ events, now, asOf, setAsOf }: Props) {
         </div>
         <div className="scrub__axis mono" aria-hidden="true">
           {days.map((t) => (
-            <span key={t} style={{ left: `${((t - start) / (SPAN_H * 3600_000)) * 100}%` }}>{utcDate(new Date(t).toISOString())}</span>
+            <span key={t} style={{ left: `${((t - start) / (SPAN_H * 3600_000)) * 100}%` }}>{gstDate(t)}</span>
           ))}
         </div>
         <input
@@ -62,7 +62,7 @@ export default function Scrubber({ events, now, asOf, setAsOf }: Props) {
           step={15 * 60_000}
           value={value}
           aria-label="Time shown on the chart"
-          aria-valuetext={asOf ? new Date(asOf).toUTCString() : "Live"}
+          aria-valuetext={asOf ? `${gstDate(asOf)} ${gstTime(asOf)} Gulf time` : "Live"}
           onChange={(e) => {
             const t = Number(e.target.value);
             setAsOf(now - t < 20 * 60_000 ? null : t);

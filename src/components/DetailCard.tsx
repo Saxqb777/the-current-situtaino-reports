@@ -6,7 +6,7 @@ import type { HormuzBundle } from "@/lib/hormuz";
 import type { ShipDetail } from "@/lib/hooks";
 import { PORT_PORTWATCH, callsBand } from "@/lib/portwatch";
 import type { WatchEvent } from "@/lib/types";
-import { SEVERITY_META, ago, agoMin, dm, flagName, tonnes, utcTime } from "@/lib/ui";
+import { SEVERITY_META, ago, agoMin, dm, flagName, tonnes, gstTime } from "@/lib/ui";
 import { severityRank } from "@/lib/classify";
 import { portWait } from "@/lib/waits";
 import Congestion from "./Congestion";
@@ -42,8 +42,8 @@ export default function DetailCard({ selection, events, vessels, detail, hz, onS
       <Card kicker={`${meta.label} · ${e.zones.map((z) => ZONE_BY_ID[z].name).join(" / ")}`} title={e.title} onClose={onClose} mark={<SeverityMark level={e.severity} size={28} />}>
         {e.summary && <p style={{ marginTop: 0 }}>{e.summary}</p>}
         <dl className="card__grid">
-          <dt>First report</dt><dd className="mono">{utcTime(e.firstSeen)} UTC · {ago(e.firstSeen)}</dd>
-          <dt>Latest</dt><dd className="mono">{utcTime(e.lastSeen)} UTC · {ago(e.lastSeen)}</dd>
+          <dt>First report</dt><dd className="mono">{gstTime(e.firstSeen)} GST · {ago(e.firstSeen)}</dd>
+          <dt>Latest</dt><dd className="mono">{gstTime(e.lastSeen)} GST · {ago(e.lastSeen)}</dd>
           {e.official && <><dt>Official</dt><dd>{e.citesOfficial.join(", ")}</dd></>}
           {e.ports.length > 0 && <><dt>Ports</dt><dd>{e.ports.map((id) => PORT_BY_ID[id].name).join(", ")}</dd></>}
         </dl>
@@ -53,7 +53,7 @@ export default function DetailCard({ selection, events, vessels, detail, hz, onS
             {e.sources.map((s) => (
               <li key={s.url}>
                 <a href={s.url} target="_blank" rel="noreferrer" className="card__item-title">{s.publisher || s.name}</a>
-                <div className="card__meta">{s.title} · {utcTime(s.publishedAt)} UTC</div>
+                <div className="card__meta">{s.title} · {gstTime(s.publishedAt)} GST</div>
               </li>
             ))}
           </ul>
@@ -169,7 +169,7 @@ export default function DetailCard({ selection, events, vessels, detail, hz, onS
             {detail.crossings.slice(0, 5).map((c) => (
               <li key={c.id}>
                 <span className="card__item-title">{c.dir === "in" ? "Into the Gulf" : "Out to the Gulf of Oman"}</span>
-                <div className="card__meta mono">{utcTime(new Date(c.t).toISOString())} UTC · {ago(new Date(c.t).toISOString())} · {c.speed.toFixed(1)} kn</div>
+                <div className="card__meta mono">{gstTime(c.t)} GST · {ago(new Date(c.t).toISOString())} · {c.speed.toFixed(1)} kn</div>
               </li>
             ))}
           </ul>

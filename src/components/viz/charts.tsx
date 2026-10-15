@@ -1,6 +1,7 @@
 "use client";
 
 import { useId } from "react";
+import { GST_MS, gstDate, gstHour } from "@/lib/ui";
 import { fmt, lin, niceMax, shortDate, useScrub, useWidth } from "./scale";
 
 /* Charts drawn in SVG at their real pixel width, so text stays crisp and
@@ -169,14 +170,13 @@ export function HourlyButterfly({ hours, height = 140 }: { hours: { t: number; i
   const x = (i: number) => PAD.l + i * step;
   const { index, handlers } = useScrub(n, PAD.l + step / 2, plotW - step);
   const h = hours[index ?? n - 1];
-  const hh = (t: number) => `${String(new Date(t).getUTCHours()).padStart(2, "0")}:00`;
   const total = hours.reduce((a, b) => ({ in: a.in + b.in, out: a.out + b.out }), { in: 0, out: 0 });
 
   return (
     <figure className="viz">
       {h && (
         <Readout>
-          {index === null ? <b>Last 48 h</b> : <b>{hh(h.t)} UTC</b>}
+          {index === null ? <b>Last 48 h</b> : <b>{gstHour(h.t)} GST</b>}
           <span><i className="key key--in" />{index === null ? total.in : h.in} in</span>
           <span><i className="key key--out" />{index === null ? total.out : h.out} out</span>
         </Readout>
@@ -196,10 +196,10 @@ export function HourlyButterfly({ hours, height = 140 }: { hours: { t: number; i
               </g>
             ))}
             <line className="viz__mid" x1={PAD.l} x2={w - PAD.r} y1={mid} y2={mid} />
-            {hours.map((p, i) => (new Date(p.t).getUTCHours() % 12 === 0 ? (
+            {hours.map((p, i) => (new Date(p.t + GST_MS).getUTCHours() % 12 === 0 ? (
               <g key={`t${p.t}`} className="viz__axis">
                 <line x1={x(i)} x2={x(i)} y1={height - PAD.b} y2={height - PAD.b + 4} />
-                <text x={x(i)} y={height - 6} textAnchor="middle">{hh(p.t)}</text>
+                <text x={x(i)} y={height - 6} textAnchor="middle">{gstHour(p.t)}</text>
               </g>
             ) : null))}
           </svg>
@@ -284,10 +284,7 @@ export function WeekBars({ weeks, reference, height = 64 }: { weeks: number[]; r
 
 export interface WaitHistoryPoint { t: number; days: number | null; waiting: number; index: number | null }
 
-const when = (t: number) => {
-  const d = new Date(t);
-  return `${shortDate(d.toISOString().slice(0, 10))} ${d.toISOString().slice(11, 13)}:00`;
-};
+const when = (t: number) => `${gstDate(t)} ${gstHour(t)} GST`;
 
 /** Our own record of a port, a point every few hours: how long the queue had waited, with the usual wait dotted across. */
 export function WaitHistory({ points, typical, word, height = 96 }: { points: WaitHistoryPoint[]; typical: number | null; word: (days: number) => string; height?: number }) {
@@ -331,7 +328,7 @@ export function WaitHistory({ points, typical, word, height = 96 }: { points: Wa
             {p?.days != null && <circle className={`viz__point${index === null ? " viz__point--now" : ""}`} cx={x(at)} cy={y(p.days)} r={3.5} />}
             {index !== null && <line className="viz__cursor" x1={x(index)} x2={x(index)} y1={4} y2={base} />}
             <g className="viz__axis">
-              <text x={1} y={height - 3} textAnchor="start">{points[0] ? shortDate(new Date(points[0].t).toISOString().slice(0, 10)) : ""}</text>
+              <text x={1} y={height - 3} textAnchor="start">{points[0] ? gstDate(points[0].t) : ""}</text>
               {typical !== null && <text x={w / 2} y={height - 3} textAnchor="middle">Dotted: usual, {word(typical)}</text>}
               <text x={w - 1} y={height - 3} textAnchor="end">Now</text>
             </g>

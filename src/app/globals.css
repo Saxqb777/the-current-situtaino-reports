@@ -383,8 +383,6 @@ a { color: inherit; }
 .scrub__bar[data-future="true"] { opacity: 0.25; }
 .scrub__axis { position: absolute; left: 0; right: 0; bottom: 0; height: 12px; font-size: 10px; color: var(--ink-3); }
 .scrub__axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
-/* The newest day sits at the right edge; keep its date inside the bar. */
-.scrub__axis span:last-child { transform: translateX(-100%); }
 .scrub__range {
   position: absolute; inset: 0 0 12px; width: 100%; margin: 0; background: transparent; appearance: none; -webkit-appearance: none; cursor: ew-resize;
 }
