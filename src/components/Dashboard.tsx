@@ -29,7 +29,7 @@ export default function Dashboard() {
   const [hover, setHover] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [layers, setLayers] = useState<Layers>({
-    ships: true, anchored: true, density: true, unifeeder: true, dark: true, ports: true, events: true, areas: true, hormuz: true,
+    ships: true, anchored: true, density: true, unifeeder: true, dark: true, ports: true, events: true, areas: true, hormuz: true, route: true,
   });
   const [theme, setTheme] = usePref("slw-theme", "theme", "day");
   const [textSize, setTextSize] = usePref("slw-text", "text", "normal");
@@ -37,6 +37,8 @@ export default function Dashboard() {
   const chart = useRef<ChartHandle>(null);
   const shipDetail = useShipDetail(selection?.kind === "vessel" ? selection.id : null);
 
+  // Our level for each sea lane, which colours the route on the chart.
+  const levels = useMemo(() => Object.fromEntries(snap.zones.map((z) => [z.zone, z.level])), [snap.zones]);
   // Which zone each ship is in, worked out once per ship list.
   const zoneShips = useMemo(() => {
     // Only the Gulf and Hormuz have a ship feed; elsewhere a count of 0 would mislead.
@@ -134,6 +136,7 @@ export default function Dashboard() {
     hz,
     hzFailed,
     zoneShips,
+    levels,
     shipDetail,
     view,
     setView,

@@ -65,6 +65,8 @@ export interface Layers {
   areas: boolean;
   /** hormuz.now's anchorages, counting line and lanes. */
   hormuz: boolean;
+  /** The route in from Suez to the Gulf, each leg coloured by our level. */
+  route: boolean;
 }
 
 /** Reads the current theme's colour tokens so the WebGL map can match the CSS. */

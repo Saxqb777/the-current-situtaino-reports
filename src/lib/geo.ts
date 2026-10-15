@@ -164,6 +164,20 @@ export const PORTS: Port[] = [
 
 export const PORT_BY_ID = Object.fromEntries(PORTS.map((x) => [x.id, x])) as Record<string, Port>;
 
+/**
+ * The way in from Suez to Jebel Ali as a passage track, one leg per sea
+ * lane, in the order of the route on the Now page. Each leg ends where the
+ * next begins. The Somali coast leg is the Arabian Sea passage past Socotra,
+ * where the piracy risk lies; the Hormuz leg runs up the Gulf of Oman.
+ */
+export const ROUTE_LEGS: Record<ZoneId, [number, number][]> = {
+  redsea: [[32.55, 29.92], [32.9, 29.2], [33.6, 27.9], [34.3, 27.0], [35.4, 25.4], [36.5, 24.0], [37.6, 22.3], [38.5, 21.0], [39.4, 19.5], [40.1, 18.1], [41.0, 16.6], [41.9, 15.0], [42.85, 13.4], [43.35, 12.55]],
+  aden: [[43.35, 12.55], [44.2, 12.0], [45.5, 11.95], [47.5, 12.6], [49.5, 13.3], [51.4, 14.0]],
+  somalia: [[51.4, 14.0], [53.0, 14.5], [55.0, 15.8], [57.0, 17.4], [58.9, 19.4], [59.9, 21.0], [60.15, 22.4]],
+  hormuz: [[60.15, 22.4], [59.6, 23.6], [58.6, 24.5], [57.4, 25.3], [56.8, 26.05], [56.6, 26.45]],
+  gulf: [[56.6, 26.45], [56.05, 26.35], [55.5, 26.0], [55.2, 25.5], [55.03, 25.03]],
+};
+
 export const CHOKEPOINTS: Chokepoint[] = [
   { id: "hormuz", name: "Strait of Hormuz", position: [56.35, 26.45], zone: "hormuz", gate: [[56.05, 26.75], [56.45, 26.05]] },
   { id: "bab-el-mandeb", name: "Bab el-Mandeb", position: [43.35, 12.6], zone: "aden", gate: [[43.15, 12.95], [43.55, 12.3]] },

@@ -4,12 +4,13 @@ import * as maplibregl from "maplibre-gl";
 import type { Feature, FeatureCollection, Polygon } from "geojson";
 import type { ExpressionSpecification, GeoJSONSource, LayerSpecification, Map as MLMap, MapMouseEvent, StyleSpecification } from "maplibre-gl";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { PORTS, ZONES, ZONE_BY_ID } from "@/lib/geo";
+import { PORTS, ROUTE_LEGS, ZONES, ZONE_BY_ID } from "@/lib/geo";
 import type { Layers, Selection, VesselLite } from "@/lib/client";
 import { readTokens } from "@/lib/client";
 import type { HormuzBundle } from "@/lib/hormuz";
 import { PORT_PORTWATCH, callsBand } from "@/lib/portwatch";
-import type { WatchEvent, ZoneId } from "@/lib/types";
+import type { Severity, WatchEvent, ZoneId } from "@/lib/types";
+import { ROUTE } from "@/lib/verdict";
 import { ICON_PIXEL_RATIO, anchorIcon, incidentIcon, shipIcon } from "./chart-icons";
 import Neatline from "./Neatline";
 import Compass from "./Compass";
@@ -31,6 +32,8 @@ interface Props {
   track: [number, number][] | null;
   hz: HormuzBundle | null;
   layers: Layers;
+  /** Our level for each sea lane, which colours the route in. */
+  levels?: Partial<Record<ZoneId, Severity>>;
   selection: Selection;
   hoverEvent: string | null;
   theme: string;
@@ -81,6 +84,24 @@ const shipColor = (t: Record<string, string>): ExpressionSpecification => [
   ["match", ["get", "g"], "tanker", t["ship-tanker"], "cargo", t["ship-cargo"], t["ship-other"]],
 ];
 
+/** Our level ("lv") to its colour, as on the Now page. */
+const levelColor = (t: Record<string, string>): ExpressionSpecification => [
+  "match", ["get", "lv"], "critical", t["sev-critical"], "high", t["sev-high"], "elevated", t["sev-elevated"], t["sev-low"],
+];
+
+/** One line per leg of the route in, and a stop where each leg starts and where the route ends. */
+function routeFeatures(levels: Partial<Record<ZoneId, Severity>>): FeatureCollection {
+  const features: Feature[] = [];
+  ROUTE.forEach((id, i) => {
+    const leg = ROUTE_LEGS[id];
+    const lv = levels[id] ?? "low";
+    features.push({ type: "Feature", properties: { zone: id, lv }, geometry: { type: "LineString", coordinates: leg } });
+    features.push({ type: "Feature", properties: { zone: id, lv }, geometry: { type: "Point", coordinates: leg[0] } });
+    if (i === ROUTE.length - 1) features.push({ type: "Feature", properties: { zone: id, lv }, geometry: { type: "Point", coordinates: leg[leg.length - 1] } });
+  });
+  return { type: "FeatureCollection", features };
+}
+
 function baseStyle(t: Record<string, string>, night: boolean): StyleSpecification {
   return {
     version: 8,
@@ -98,6 +119,7 @@ function baseStyle(t: Record<string, string>, night: boolean): StyleSpecificatio
       events: { type: "geojson", data: empty(), promoteId: "id" },
       ships: { type: "geojson", data: empty(), promoteId: "id" },
       track: { type: "geojson", data: empty() },
+      route: { type: "geojson", data: empty() },
     },
     layers: [
       { id: "sea", type: "background", paint: { "background-color": t["sea-shallow"] } },
@@ -126,6 +148,28 @@ function baseStyle(t: Record<string, string>, night: boolean): StyleSpecificatio
       { id: "borders", type: "line", source: "borders", paint: { "line-color": t["border-line"], "line-width": 0.8, "line-dasharray": [4, 2, 1, 2] } },
       { id: "areas-fill", type: "fill", source: "areas", paint: { "fill-color": t.magenta, "fill-opacity": ["case", ["boolean", ["feature-state", "active"], false], 0.07, 0.025] } },
       { id: "areas-line", type: "line", source: "areas", paint: { "line-color": t.magenta, "line-width": 1.4, "line-dasharray": [3, 2], "line-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.8, 7, 0.3] } },
+      // The route in: a paper casing under each leg, so the colour reads over land shading and density alike.
+      {
+        id: "route-case", type: "line", source: "route", filter: ["==", ["geometry-type"], "LineString"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": t.paper, "line-width": ["interpolate", ["linear"], ["zoom"], 3, 5, 6, 8, 9, 10], "line-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.9, 8, 0.4] },
+      },
+      {
+        id: "route", type: "line", source: "route", filter: ["==", ["geometry-type"], "LineString"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": levelColor(t), "line-width": ["interpolate", ["linear"], ["zoom"], 3, 2.4, 6, 4, 9, 5], "line-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.95, 8, 0.45] },
+      },
+      {
+        id: "route-stops", type: "circle", source: "route", filter: ["==", ["geometry-type"], "Point"],
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 2.6, 6, 4.2],
+          "circle-color": t.paper,
+          "circle-stroke-color": levelColor(t),
+          "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 3, 1.6, 6, 2.4],
+          "circle-opacity": ["interpolate", ["linear"], ["zoom"], 5, 1, 8, 0.5],
+          "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], 5, 1, 8, 0.5],
+        },
+      },
       { id: "hz-lanes", type: "line", source: "hz", filter: ["==", ["get", "kind"], "lane"], minzoom: 5.5, paint: { "line-color": t["ink-3"], "line-width": 1, "line-opacity": 0.55, "line-dasharray": [6, 3] } },
       { id: "hz-area-fill", type: "fill", source: "hz", filter: ["==", ["get", "kind"], "area"], minzoom: 5.5, paint: { "fill-color": t.olive, "fill-opacity": ["interpolate", ["linear"], ["zoom"], 5.5, 0, 7, 0.07] } },
       { id: "hz-area-line", type: "line", source: "hz", filter: ["==", ["get", "kind"], "area"], minzoom: 5.5, paint: { "line-color": t["olive-ink"], "line-width": 1.3, "line-dasharray": [0.6, 1.6], "line-opacity": ["interpolate", ["linear"], ["zoom"], 5.5, 0, 6.5, 0.7] } },
@@ -237,7 +281,7 @@ const GROUP_WORD = { tanker: "Tanker", cargo: "Cargo", other: "Other" };
 interface Tip { x: number; y: number; title: string; sub: string }
 
 export default function ChartMap(
-  { events, vessels, track, hz, layers, selection, hoverEvent, theme, coveredBottom = 0, onSelect, onHoverEvent, handle, children }: Props,
+  { events, vessels, track, hz, layers, levels, selection, hoverEvent, theme, coveredBottom = 0, onSelect, onHoverEvent, handle, children }: Props,
 ) {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
@@ -469,7 +513,16 @@ export default function ChartMap(
     vis("ships-anchored", layers.anchored);
     vis("density", layers.density);
     for (const id of ["hz-lanes", "hz-area-fill", "hz-area-line", "hz-gate"]) vis(id, layers.hormuz);
+    for (const id of ["route-case", "route", "route-stops"]) vis(id, layers.route);
   }, [map, layers]);
+
+  // The route in, recoloured when our levels change.
+  const levelKey = ROUTE.map((id) => levels?.[id] ?? "low").join();
+  useEffect(() => {
+    if (!map) return;
+    const lv = levelKey.split(",") as Severity[];
+    (map.getSource("route") as GeoJSONSource).setData(routeFeatures(Object.fromEntries(ROUTE.map((id, i) => [id, lv[i]]))));
+  }, [map, levelKey]);
 
   // Selected ship: a ring, and its recent track.
   const selectedShip = selection?.kind === "vessel" ? selection.id : "";

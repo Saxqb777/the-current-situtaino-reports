@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import type { Layers, Selection, ShipFeeds, VesselLite } from "@/lib/client";
 import type { HormuzBundle } from "@/lib/hormuz";
 import type { ShipDetail } from "@/lib/hooks";
-import type { Snapshot, WatchEvent, ZoneId } from "@/lib/types";
+import type { Severity, Snapshot, WatchEvent, ZoneId } from "@/lib/types";
 import type { ChartHandle } from "./ChartMap";
 import type { LogFilters } from "./Log";
 
@@ -32,6 +32,8 @@ export interface Model {
   hz: HormuzBundle | null;
   hzFailed: boolean;
   zoneShips: ZoneShips;
+  /** Our level for each sea lane. */
+  levels: Partial<Record<ZoneId, Severity>>;
   shipDetail: ShipDetail | null;
   live: boolean;
   fresh: Set<string>;

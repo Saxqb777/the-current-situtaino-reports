@@ -95,6 +95,7 @@ export default function DesktopApp({ m }: { m: Model }) {
         track={m.shipDetail?.track ?? null}
         hz={m.hz}
         layers={m.layers}
+        levels={m.levels}
         selection={m.selection}
         hoverEvent={m.hover}
         theme={m.theme}
