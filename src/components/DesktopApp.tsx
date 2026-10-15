@@ -1,15 +1,18 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ZONE_BY_ID } from "@/lib/geo";
 import { SEVERITY_META, utcDate, utcTime } from "@/lib/ui";
 import DetailCard from "./DetailCard";
 import ExportDialog from "./ExportDialog";
 import Legend from "./Legend";
 import Log from "./Log";
-import type { Model } from "./model";
+import type { Go, Model, View } from "./model";
 import Newsroom from "./Newsroom";
+import HormuzPage from "./pages/HormuzPage";
+import NowPage from "./pages/NowPage";
+import PortsPage from "./pages/PortsPage";
 import Scrubber from "./Scrubber";
 import Tour from "./Tour";
 import WatchStrip from "./WatchStrip";
@@ -17,20 +20,45 @@ import { TourIcon } from "./phone/icons";
 
 const ChartMap = dynamic(() => import("./ChartMap"), { ssr: false, loading: () => <div className="chart" /> });
 
-/** Laptops and large tablets: masthead, watch strip, chart beside the Log. */
+const VIEWS: { id: View; label: string }[] = [
+  { id: "now", label: "Now" },
+  { id: "map", label: "Chart" },
+  { id: "hormuz", label: "Hormuz" },
+  { id: "ports", label: "Ports" },
+];
+
+/** Laptops and large tablets: masthead with four views; the live chart sits beside the Log. */
 export default function DesktopApp({ m }: { m: Model }) {
   const [exporting, setExporting] = useState(false);
   const clock = new Date(m.now || 0).toISOString();
   const { snap } = m;
+  const onMap = m.view === "map";
+
+  // The chart was hidden under a page; make sure it fills its space again.
+  useEffect(() => { if (onMap) requestAnimationFrame(() => m.chart.current?.resize()); }, [onMap, m.chart]);
+
+  const go: Go = {
+    view: m.setView,
+    zone: (z) => { m.setView("map"); m.focusZone(z); },
+    select: (sel) => { m.setView("map"); m.select(sel); },
+    log: (z) => { m.setView("map"); if (z !== undefined && z !== m.filters.zone) m.setFilters({ ...m.filters, zone: z }); },
+  };
 
   return (
-    <div className="app">
+    <div className="app" data-view={m.view}>
       <header className="top">
         <div className="mast">
           <div>
             <h1 className="mast__title">Sea Lanes <span>Watch</span></h1>
-            <div className="mast__sub">GCC ports · Strait of Hormuz · Red Sea · Bab el-Mandeb · Somali coast</div>
+            <div className="mast__sub"><span>GCC ports · Strait of Hormuz</span> <span>Red Sea · Bab el-Mandeb · Somali coast</span></div>
           </div>
+          <nav className="vtabs" aria-label="Views">
+            {VIEWS.map((v) => (
+              <button key={v.id} className="vtabs__tab" data-tour={`vtab-${v.id}`} aria-current={m.view === v.id ? "page" : undefined} onClick={() => m.setView(v.id)}>
+                {v.label}
+              </button>
+            ))}
+          </nav>
           <div className="mast__spacer" />
           <div className="mast__clock mono" aria-live="off" style={{ visibility: m.now ? "visible" : "hidden" }}>
             <b>{utcTime(clock)} UTC</b>
@@ -56,18 +84,16 @@ export default function DesktopApp({ m }: { m: Model }) {
         {snap.sample && (
           <div className="notice"><b>Sample data</b>The reports and ships on screen are made up for design review. Turn SAMPLE_DATA off to see live sources.</div>
         )}
-        {!snap.sample && snap.lastRefresh && !m.aisLive && (
-          <div className="notice"><b>Ship feed off</b>Add an AISSTREAM_API_KEY to show live ships, transit counts and ships gone dark. News, ports and zones are live.</div>
-        )}
       </header>
 
-      <WatchStrip zones={snap.zones} active={m.filters.zone} aisLive={m.aisLive} onZone={(z) => m.focusZone(z)} />
+      <WatchStrip zones={snap.zones} active={m.filters.zone} zoneShips={m.zoneShips} hormuzCrossed={m.hz?.status?.last24h.total ?? null} onZone={(z) => m.focusZone(z)} />
 
       <ChartMap
         handle={m.chart}
         events={m.layers.events ? m.shown : []}
         vessels={m.vessels}
-        track={m.track}
+        track={m.shipDetail?.track ?? null}
+        hz={m.hz}
         layers={m.layers}
         selection={m.selection}
         hoverEvent={m.hover}
@@ -75,8 +101,8 @@ export default function DesktopApp({ m }: { m: Model }) {
         onSelect={(sel) => m.select(sel)}
         onHoverEvent={m.setHover}
       >
-        <Legend layers={m.layers} setLayers={m.setLayers} counts={m.counts} aisConfigured={m.aisLive} />
-        <DetailCard selection={m.selection} events={snap.events} vessels={m.vessels} aisConfigured={m.aisLive} onSelect={(sel) => m.select(sel)} onClose={() => m.select(null)} />
+        <Legend layers={m.layers} setLayers={m.setLayers} counts={m.counts} feeds={m.feeds} now={m.now} foldable />
+        <DetailCard selection={m.selection} events={snap.events} vessels={m.vessels} detail={m.shipDetail} hz={m.hz} onSelect={(sel) => m.select(sel)} onClose={() => m.select(null)} />
         <Flash m={m} />
         <Newsroom />
       </ChartMap>
@@ -91,6 +117,7 @@ export default function DesktopApp({ m }: { m: Model }) {
         picked={m.picked}
         togglePick={m.togglePick}
         pickAllShown={m.pickAllShown}
+        clearPicks={m.clearPicks}
         selected={m.selection?.kind === "event" ? m.selection.id : null}
         hover={m.hover}
         fresh={m.fresh}
@@ -100,19 +127,34 @@ export default function DesktopApp({ m }: { m: Model }) {
         onHover={m.setHover}
       />
 
+      {!onMap && (
+        <main key={m.view} className="deskpage" aria-label={VIEWS.find((v) => v.id === m.view)?.label}>
+          {m.view === "now" && <NowPage m={m} go={go} />}
+          {m.view === "hormuz" && <HormuzPage m={m} go={go} />}
+          {m.view === "ports" && <PortsPage m={m} go={go} />}
+        </main>
+      )}
+      {!onMap && <Flash m={m} onOpen={(id) => go.select({ kind: "event", id })} />}
+
       <ExportDialog
         open={exporting}
         onClose={() => setExporting(false)}
         events={m.pickedEvents}
         zones={snap.zones}
+        hz={m.hz}
         chartImage={() => m.chart.current?.snapshot() ?? null}
+        onClear={m.clearPicks}
       />
 
       {m.tour.on && (
         <Tour
           variant="desktop"
           onEnd={m.tour.end}
-          prepare={() => { if (m.selection) m.select(null); }}
+          prepare={(id) => {
+            if (m.selection) m.select(null);
+            if (id === "welcome" || id === "now" || id === "route" || id === "finish") m.setView("now");
+            else if (id !== "hormuz" && id !== "ports" && id !== "display") m.setView("map");
+          }}
           model={{
             zone: m.filters.zone,
             picked: m.picked.size,

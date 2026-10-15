@@ -1,9 +1,11 @@
 import { AisTracker } from "./ais";
 import { classify } from "./classify";
+import { refreshCongestion } from "./congestion";
 import { fetchSource } from "./feeds";
 import { SOURCES } from "./sources";
 import { store } from "./store";
 import type { ClassifiedItem, SourceHealth } from "./types";
+import { refreshWestGulf } from "./westgulf";
 
 export const KEEP_MS = 7 * 24 * 3600_000;
 /**
@@ -22,6 +24,8 @@ export interface RefreshResult {
   aisMessages?: number;
   aisFrames?: number;
   aisError?: string;
+  westGulf?: Awaited<ReturnType<typeof refreshWestGulf>>;
+  congestion?: Awaited<ReturnType<typeof refreshCongestion>>;
   ms?: number;
 }
 
@@ -66,17 +70,19 @@ async function refreshShips(apiKey: string) {
 }
 
 /**
- * Reads every news source and samples the ship feed, once per STALE_MS at
- * most, however many visitors or timers ask for it at the same time.
+ * Reads every news source, samples the ship feed and, when its turn has
+ * come, takes a west-Gulf ship picture and asks about a few ports' waits; once per STALE_MS at most, however many visitors or timers ask for it at the same time.
  */
 export async function refresh(): Promise<RefreshResult> {
   const s = store();
   if (!(await s.claimRefresh(STALE_MS))) return { ran: false };
   const started = Date.now();
   const apiKey = process.env.AISSTREAM_API_KEY;
-  const [news, ships] = await Promise.all([
+  const [news, ships, westGulf, congestion] = await Promise.all([
     refreshNews(),
     apiKey ? refreshShips(apiKey) : Promise.resolve(null),
+    refreshWestGulf().catch((err) => ({ ran: false, error: err instanceof Error ? err.message : String(err) })),
+    refreshCongestion().catch((err) => ({ ran: false, error: err instanceof Error ? err.message : String(err) })),
   ]);
   await s.putMeta({ lastRefresh: new Date().toISOString() });
   await s.prune(KEEP_MS);
@@ -88,6 +94,8 @@ export async function refresh(): Promise<RefreshResult> {
     aisMessages: ships?.messages,
     aisFrames: ships?.frames,
     aisError: ships?.error,
+    westGulf,
+    congestion,
     ms: Date.now() - started,
   };
   console.log("refresh", JSON.stringify(result));

@@ -33,15 +33,30 @@ const STEPS: Step[] = [
   {
     id: "welcome",
     title: "Welcome to Sea Lanes Watch",
-    body: "A live report on shipping around the GCC, the Red Sea and the Somali coast. This short tour shows you how to read it. It takes about a minute.",
+    body: "A live report on shipping around the GCC: the Strait of Hormuz, the Gulf ports, the Red Sea and the Somali coast. This short tour shows you around. It takes about a minute.",
+  },
+  {
+    id: "now",
+    target: "now-verdict",
+    title: "Our verdict",
+    body: "Our own reading of the five sea lanes in one line, with the bottom line under it. Come back later and \"Since you last looked\" lists what changed. It all updates on its own.",
+  },
+  {
+    id: "route",
+    target: "now-route",
+    title: "The route in",
+    body: {
+      phone: "Suez to the Gulf ports, one stop per sea lane, coloured by our level, with the one fact that matters there. Tap a stop to fly the chart to it.",
+      desktop: "Suez to the Gulf ports, one stop per sea lane, coloured by our level, with the one fact that matters there. Click a stop to fly the chart to it.",
+    },
   },
   {
     id: "zones",
     target: "zones",
     title: "Five watch zones",
     body: {
-      phone: "Each card is one sea area. The word shows its level today: Normal, Elevated, High or Critical. Swipe sideways to see them all.",
-      desktop: "Each column is one sea area. The word shows its level today: Normal, Elevated, High or Critical, with reports, ships and lost signals underneath.",
+      phone: "On the chart, each card is one sea area. The word shows its level today: Normal, Elevated, High or Critical. Swipe sideways to see them all.",
+      desktop: "Each column is one sea area. The word shows its level today: Normal, Elevated, High or Critical, with reports and ships underneath.",
     },
   },
   {
@@ -60,23 +75,23 @@ const STEPS: Step[] = [
     target: "chart",
     title: "The live chart",
     body: {
-      phone: "Ringed circles are reports, arrows are ships and anchors are ports. A dashed pink ship has stopped sending its position. Tap any of them for details, and pinch to zoom.",
-      desktop: "Ringed circles are reports, arrows are ships and anchors are ports. A dashed pink ship has stopped sending its position. Click any of them for details.",
+      phone: "Zoomed out, the green glow shows where ships crowd. Zoom in and arrows are ships under way, dots are ships stopped or at anchor. A dashed pink ship has lost its signal. Ports are ringed red where calls have collapsed. Tap anything for details.",
+      desktop: "Zoomed out, the green glow shows where ships crowd. Zoom in and arrows are ships under way, dots are ships stopped or at anchor. A dashed pink ship has lost its signal. Ports are ringed red where calls have collapsed. Click anything for details.",
     },
   },
   {
     id: "layers",
     target: "layers",
     title: "Chart layers",
-    body: "Show or hide ships, the Unifeeder fleet, ships with signal lost, ports and the watch areas.",
+    body: "Show or hide ships, ships at anchor, the density glow, the Hormuz anchorages, ports and reports. It also says where each ship feed comes from.",
   },
   {
     id: "time",
     target: "time",
     title: "Look back in time",
     body: {
-      phone: "Open the clock to drag back up to seven days and see the picture as it stood then.",
-      desktop: "Drag back up to seven days to see the picture as it stood then. The bars show when reports came in, coloured by level.",
+      phone: "Open the clock to drag back up to seven days and see the reports as they stood then.",
+      desktop: "Drag back up to seven days to see the reports as they stood then. The bars show when reports came in, coloured by level.",
     },
   },
   {
@@ -98,15 +113,33 @@ const STEPS: Step[] = [
   },
   {
     id: "briefing",
-    target: { phone: "tab-briefing", desktop: "briefing" },
+    target: { phone: "briefing-btn", desktop: "briefing" },
     title: "Send a briefing",
-    body: "Your ticked reports become a designed PDF with the chart, the zone levels and every source linked, ready to email or print.",
+    body: "Your ticked reports become a designed PDF with our verdict, the route in, the strait and port figures, and every source linked, ready to email or print. Clear all empties your picks.",
+  },
+  {
+    id: "hormuz",
+    target: { phone: "tab-hormuz", desktop: "vtab-hormuz" },
+    title: "Hormuz in depth",
+    body: "How far traffic is from normal, whether it is recovering, who still crosses and who is stuck at anchor, with our own reports on the strait. Drag across any chart to read it.",
+  },
+  {
+    id: "ports",
+    target: { phone: "tab-ports", desktop: "vtab-ports" },
+    title: "Every Gulf port",
+    body: {
+      phone: "Every Gulf port: its calls and exports against before the crisis, and how long ships wait to get in. Switch to Waiting times to sort by the longest wait. Tap a port for its history.",
+      desktop: "Every Gulf port: its calls and exports against before the crisis, and how long ships wait to get in. Switch to Waiting times to sort by the longest wait. Click a port for its history.",
+    },
   },
   {
     id: "tv",
-    target: { phone: "tab-tv", desktop: "tv" },
+    target: "tv",
     title: "Live TV",
-    body: "Al Jazeera English and Arabic, Sky News, France 24, DW and TRT World, live inside the app.",
+    body: {
+      phone: "Al Jazeera English and Arabic, Sky News, France 24, DW and TRT World, live at the bottom of the Now page.",
+      desktop: "Al Jazeera English and Arabic, Sky News, France 24, DW and TRT World, live inside the app.",
+    },
   },
   {
     id: "display",
@@ -120,7 +153,7 @@ const STEPS: Step[] = [
   {
     id: "finish",
     title: "You're on watch",
-    body: "Everything updates on its own. When a new High or Critical report comes in, it flashes across the top of the chart.",
+    body: "Everything updates on its own. When a new High or Critical report comes in, it flashes across the top of the screen.",
   },
 ];
 
@@ -147,7 +180,8 @@ function reveal(el: HTMLElement) {
     if (sx && r.left < pr.left) p.scrollLeft -= pr.left - r.left + 16;
     else if (sx && r.right > pr.right) p.scrollLeft += r.right - pr.right + 16;
     if (sy && r.top < pr.top) p.scrollTop -= pr.top - r.top + 16;
-    else if (sy && r.bottom > pr.bottom) p.scrollTop += r.bottom - pr.bottom + 16;
+    // A target taller than the list shows from its top.
+    else if (sy && r.bottom > pr.bottom) p.scrollTop += Math.min(r.bottom - pr.bottom + 16, r.top - pr.top - 16);
   }
 }
 
@@ -342,7 +376,8 @@ function placeCard(variant: Variant, hole: Box | null, cardH: number, vw: number
   if (variant === "phone") {
     if (!hole) return { left: M, right: M, top: Math.max(M, (vh - cardH) / 2) };
     const mid = hole.top + hole.height / 2;
-    return mid < vh / 2
+    // A tall target reads from its top, so the card covers its far end.
+    return mid < vh / 2 || hole.height > vh * 0.6
       ? { left: M, right: M, bottom: `calc(env(safe-area-inset-bottom, 0px) + ${M}px)` }
       : { left: M, right: M, top: `calc(env(safe-area-inset-top, 0px) + ${M}px)` };
   }

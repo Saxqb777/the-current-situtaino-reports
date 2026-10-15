@@ -51,9 +51,26 @@ export function sourceLine(e: WatchEvent): string {
 
 export const ZONE_ORDER: ZoneId[] = ["hormuz", "gulf", "redsea", "aden", "somalia"];
 
-/** AIS ship type code to the three groups the chart colours. */
-export function shipGroup(type: number): "tanker" | "cargo" | "other" {
-  if (type >= 80 && type <= 89) return "tanker";
-  if (type >= 70 && type <= 79) return "cargo";
-  return "other";
+/** Minutes old, written the same way as `ago`. */
+export function agoMin(min: number): string {
+  if (min < 1) return "just now";
+  if (min < 60) return `${Math.round(min)} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `${h} h ago`;
+  return `${Math.round(h / 24)} days ago`;
 }
+
+let regionNames: Intl.DisplayNames | null = null;
+/** "PA" → "Panama"; falls back to the code. */
+export function flagName(code: string): string {
+  if (!code || code.length !== 2) return code;
+  try {
+    regionNames ??= new Intl.DisplayNames(["en"], { type: "region" });
+    return regionNames.of(code.toUpperCase()) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** 321735 → "321,735 t". */
+export const tonnes = (n: number) => `${Math.round(n).toLocaleString("en-GB")} t`;

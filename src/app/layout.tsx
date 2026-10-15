@@ -6,6 +6,7 @@ import "@fontsource/spline-sans-mono/400.css";
 import "@fontsource/spline-sans-mono/600.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
+import "./pages.css";
 
 export const metadata: Metadata = {
   title: "Sea Lanes Watch",

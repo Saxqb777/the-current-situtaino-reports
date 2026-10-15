@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PORTS, PORT_BY_ID } from "@/lib/geo";
+import { PORTS, PORT_BY_ID, zoneAt } from "@/lib/geo";
 import type { Layers, Selection } from "@/lib/client";
-import { useLiveData, useMedia, usePref, useTrack } from "@/lib/hooks";
+import { useHormuz, useLiveData, useMedia, usePref, useShipDetail } from "@/lib/hooks";
 import type { ZoneId } from "@/lib/types";
 import { SEVERITIES } from "@/lib/types";
 import type { ChartHandle } from "./ChartMap";
 import DesktopApp from "./DesktopApp";
 import type { LogFilters } from "./Log";
-import type { Model } from "./model";
+import type { Model, View, ZoneShips } from "./model";
 import PhoneApp from "./phone/PhoneApp";
 
 /** Phones, plus small landscape screens where the desktop grid has no room. */
@@ -18,20 +18,38 @@ const TOUR_KEY = "slw-tour-done";
 
 export default function Dashboard() {
   const phone = useMedia(PHONE_QUERY);
-  const { snap, vessels, live, fresh, flash, dismissFlash } = useLiveData();
+  const { snap, vessels, feeds, live, fresh, flash, dismissFlash } = useLiveData();
+  const { data: hz, failed: hzFailed } = useHormuz();
   const [now, setNow] = useState(0);
+  const [view, setViewState] = useState<View>("now");
 
   const [filters, setFiltersState] = useState<LogFilters>({ zone: null, minSeverity: "low", officialOnly: false, query: "" });
   const [asOf, setAsOf] = useState<number | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [layers, setLayers] = useState<Layers>({ ships: true, unifeeder: true, dark: true, ports: true, events: true, areas: true });
+  const [layers, setLayers] = useState<Layers>({
+    ships: true, anchored: true, density: true, unifeeder: true, dark: true, ports: true, events: true, areas: true, hormuz: true,
+  });
   const [theme, setTheme] = usePref("slw-theme", "theme", "day");
   const [textSize, setTextSize] = usePref("slw-text", "text", "normal");
   const [tourOn, setTourOn] = useState(false);
   const chart = useRef<ChartHandle>(null);
-  const track = useTrack(selection?.kind === "vessel" ? selection.id : null, vessels);
+  const shipDetail = useShipDetail(selection?.kind === "vessel" ? selection.id : null);
+
+  // Which zone each ship is in, worked out once per ship list.
+  const zoneShips = useMemo(() => {
+    // Only the Gulf and Hormuz have a ship feed; elsewhere a count of 0 would mislead.
+    const out: ZoneShips = { gulf: { ships: 0, silent: 0 }, hormuz: { ships: 0, silent: 0 }, redsea: null, aden: null, somalia: null };
+    for (const v of vessels) {
+      const z = zoneAt([v.lon, v.lat]);
+      const slot = z ? out[z] : null;
+      if (!slot) continue;
+      slot.ships++;
+      if (v.dark) slot.silent++;
+    }
+    return out;
+  }, [vessels]);
 
   useEffect(() => {
     setNow(Date.now());
@@ -75,10 +93,16 @@ export default function Dashboard() {
     } else if (sel?.kind === "port") {
       chart.current?.flyTo(PORT_BY_ID[sel.id].position, 8.5, inset);
     } else if (sel?.kind === "vessel") {
-      const v = vessels.find((x) => x.mmsi === sel.id);
+      const v = vessels.find((x) => x.id === sel.id);
       if (v) chart.current?.flyTo([v.lon, v.lat], 8, inset);
     }
   }, [snap.events, vessels]);
+
+  const setView = useCallback((v: View) => {
+    setViewState(v);
+    // A page covers the whole screen; scroll it back to its top when it is opened again.
+    requestAnimationFrame(() => document.querySelector(`[data-page="${v}"]`)?.scrollTo({ top: 0 }));
+  }, []);
 
   const focusZone = useCallback((zone: ZoneId | null, inset?: number) => {
     setFiltersState((f) => ({ ...f, zone }));
@@ -106,13 +130,19 @@ export default function Dashboard() {
   const model: Model = {
     snap,
     vessels,
-    track,
+    feeds,
+    hz,
+    hzFailed,
+    zoneShips,
+    shipDetail,
+    view,
+    setView,
     live,
     fresh,
     flash,
     dismissFlash,
     now,
-    aisLive: snap.ais.configured,
+    aisLive: vessels.length > 0,
     filters,
     setFilters,
     focusZone,
@@ -128,10 +158,12 @@ export default function Dashboard() {
     pickedEvents: snap.events.filter((e) => picked.has(e.id)),
     togglePick,
     pickAllShown: () => setPicked((p) => new Set([...p, ...shown.map((e) => e.id)])),
+    clearPicks: () => setPicked(new Set()),
     layers,
     setLayers,
     counts: {
-      ships: vessels.filter((v) => !v.dark).length,
+      ships: vessels.filter((v) => !v.dark && v.moving).length,
+      anchored: vessels.filter((v) => !v.dark && !v.moving).length,
       unifeeder: vessels.filter((v) => v.unifeeder).length,
       dark: vessels.filter((v) => v.dark).length,
       ports: PORTS.length,

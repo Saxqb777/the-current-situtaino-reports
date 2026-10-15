@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { HormuzBundle } from "@/lib/hormuz";
 import type { WatchEvent, ZoneSummary } from "@/lib/types";
 import BriefingForm from "./BriefingForm";
 
@@ -9,10 +10,12 @@ interface Props {
   onClose(): void;
   events: WatchEvent[];
   zones: ZoneSummary[];
+  hz: HormuzBundle | null;
   chartImage(): string | null;
+  onClear?(): void;
 }
 
-export default function ExportDialog({ open, onClose, events, zones, chartImage }: Props) {
+export default function ExportDialog({ open, onClose, events, zones, hz, chartImage, onClear }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -31,8 +34,10 @@ export default function ExportDialog({ open, onClose, events, zones, chartImage 
       <BriefingForm
         events={events}
         zones={zones}
+        hz={hz}
         chartImage={chartImage}
         onDone={onClose}
+        onClear={onClear && (() => { onClear(); onClose(); })}
         extraAction={<button className="tool" onClick={onClose}>Cancel</button>}
       />
     </dialog>

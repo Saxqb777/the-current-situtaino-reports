@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { decodeVessels, type VesselLite } from "./client";
+import { type ShipFeeds, decodeVessels, type VesselLite } from "./client";
+import type { HormuzBundle, HzCrossing, HzShip } from "./hormuz";
 import type { Snapshot, WatchEvent } from "./types";
 
 export const EMPTY_SNAPSHOT: Snapshot = {
@@ -18,7 +19,8 @@ const SNAP_MS = 30_000;
 /** Faster while the server is still reading sources, so the first reports appear soon. */
 const SNAP_SETTLING_MS = 10_000;
 const SETTLED_MS = 6 * 60_000;
-const VESSELS_MS = 120_000;
+const VESSELS_MS = 60_000;
+const HORMUZ_MS = 90_000;
 
 /**
  * GET that lets the browser revalidate its copy. The server answers 304 when
@@ -40,20 +42,22 @@ async function getIfChanged<T>(url: string, etag: string | null): Promise<{ data
 export function useLiveData() {
   const [snap, setSnap] = useState<Snapshot>(EMPTY_SNAPSHOT);
   const [vessels, setVessels] = useState<VesselLite[]>([]);
+  const [feeds, setFeeds] = useState<ShipFeeds | null>(null);
   const [live, setLive] = useState(true);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const [flash, setFlash] = useState<WatchEvent | null>(null);
   const known = useRef<Set<string> | null>(null);
-  const tags = useRef<{ snap: string | null; vessels: string | null }>({ snap: null, vessels: null });
-  const lastAis = useRef<string | null | undefined>(undefined);
+  const tags = useRef<{ snap: string | null }>({ snap: null });
   const latest = useRef<Snapshot>(EMPTY_SNAPSHOT);
 
+  // Ship rows are cached at the edge for half a minute, so a plain GET is cheap.
   const pollVessels = useCallback(async () => {
     try {
-      const r = await getIfChanged<{ rows: Parameters<typeof decodeVessels>[0] }>("/api/vessels", tags.current.vessels);
-      if (!r) return;
-      tags.current.vessels = r.etag;
-      setVessels(decodeVessels(r.data.rows));
+      const res = await fetch("/api/vessels");
+      if (!res.ok) return;
+      const data = (await res.json()) as { rows: Parameters<typeof decodeVessels>[0]; sources: ShipFeeds };
+      setVessels(decodeVessels(data.rows));
+      setFeeds(data.sources);
     } catch { /* keep the last positions */ }
   }, []);
 
@@ -85,10 +89,6 @@ export function useLiveData() {
             }
           }
           known.current = new Set(s.events.map((e) => e.id));
-          if (s.ais.lastMessage !== lastAis.current) {
-            lastAis.current = s.ais.lastMessage;
-            void pollVessels();
-          }
         }
         const s = latest.current;
         if (!s.sample && (!s.lastRefresh || Date.now() - Date.parse(s.lastRefresh) > SETTLED_MS)) next = SNAP_SETTLING_MS;
@@ -102,11 +102,12 @@ export function useLiveData() {
     };
 
     const onVisibility = () => {
-      if (document.visibilityState === "visible") void pollSnap();
+      if (document.visibilityState === "visible") { void pollSnap(); void pollVessels(); }
       else clearTimeout(timer);
     };
 
     void pollSnap();
+    void pollVessels();
     document.addEventListener("visibilitychange", onVisibility);
     const shipTimer = setInterval(() => { if (document.visibilityState === "visible") void pollVessels(); }, VESSELS_MS);
     return () => {
@@ -123,24 +124,56 @@ export function useLiveData() {
     return () => clearTimeout(t);
   }, [flash]);
 
-  return { snap, vessels, live, fresh, flash, dismissFlash: () => setFlash(null) };
+  return { snap, vessels, feeds, live, fresh, flash, dismissFlash: () => setFlash(null) };
 }
 
-/** The recent track of the selected ship, fetched on demand. */
-export function useTrack(mmsi: number | null, vessels: VesselLite[]): [number, number][] | null {
-  const [track, setTrack] = useState<[number, number][] | null>(null);
-  const seen = mmsi === null ? null : vessels.find((v) => v.mmsi === mmsi)?.lastSeen ?? null;
+/** hormuz.now's strait, traffic and port figures, refreshed while the page is visible. */
+export function useHormuz(): { data: HormuzBundle | null; failed: boolean } {
+  const [data, setData] = useState<HormuzBundle | null>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    setTrack(null);
-    if (mmsi === null) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      clearTimeout(timer);
+      try {
+        const res = await fetch("/api/hormuz");
+        if (!res.ok) throw new Error(String(res.status));
+        const d = (await res.json()) as HormuzBundle;
+        if (!stopped) { setData(d); setFailed(false); }
+      } catch {
+        if (!stopped) setFailed(true);
+      }
+      if (!stopped && document.visibilityState === "visible") timer = setTimeout(poll, HORMUZ_MS);
+    };
+    const onVisibility = () => { if (document.visibilityState === "visible") void poll(); else clearTimeout(timer); };
+    void poll();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { stopped = true; clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibility); };
+  }, []);
+  return { data, failed };
+}
+
+export interface ShipDetail {
+  track: [number, number][];
+  vessel: (HzShip & { heading?: number; width?: number }) | null;
+  crossings: HzCrossing[];
+}
+
+/** The picked ship's track and fuller details, fetched on demand. */
+export function useShipDetail(id: string | null): ShipDetail | null {
+  const [detail, setDetail] = useState<ShipDetail | null>(null);
+  useEffect(() => {
+    setDetail(null);
+    if (id === null) return;
     const ctl = new AbortController();
-    fetch(`/api/vessel/${mmsi}`, { signal: ctl.signal, cache: "no-store" })
+    fetch(`/api/vessel/${id}`, { signal: ctl.signal })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { track?: [number, number][] } | null) => setTrack(d?.track ?? null))
+      .then((d: ShipDetail | null) => setDetail(d ? { track: d.track ?? [], vessel: d.vessel ?? null, crossings: d.crossings ?? [] } : null))
       .catch(() => { /* no track, the ship still shows */ });
     return () => ctl.abort();
-  }, [mmsi, seen]);
-  return track;
+  }, [id]);
+  return detail;
 }
 
 /** A saved display preference mirrored onto <html data-*> so CSS can use it. */

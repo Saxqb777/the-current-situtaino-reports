@@ -21,6 +21,7 @@ interface Props {
   picked: Set<string>;
   togglePick(id: string): void;
   pickAllShown(): void;
+  clearPicks(): void;
   selected: string | null;
   hover: string | null;
   fresh: Set<string>;
@@ -32,6 +33,8 @@ interface Props {
   variant?: "panel" | "sheet";
   /** Phone sheet pulled down: show the newest important report under the title. */
   peek?: boolean;
+  /** Phone: opens the briefing builder from the Log's title bar. */
+  onBriefing?(): void;
 }
 
 export default function Log(p: Props) {
@@ -70,6 +73,11 @@ export default function Log(p: Props) {
             <i aria-hidden="true" />
             {status}
           </span>
+          {p.onBriefing && (
+            <button className="log__brief" data-tour="briefing-btn" onClick={p.onBriefing} aria-label={`Briefing, ${p.picked.size} ticked`}>
+              Briefing <span className="mono">{p.picked.size}</span>
+            </button>
+          )}
         </div>
         {sheet && p.peek && latest && (
           <button className="log__latest" data-sheet-drag="" onClick={() => p.onSelect(latest.id)} style={{ "--entry-sev": SEVERITY_META[latest.severity].color } as React.CSSProperties}>
@@ -97,6 +105,7 @@ export default function Log(p: Props) {
             </button>
           )}
           {!sheet && <button className="tool" onClick={p.pickAllShown} disabled={!events.length}>Select shown</button>}
+          {!sheet && <button className="tool" onClick={p.clearPicks} disabled={!p.picked.size}>Clear all</button>}
         </div>
         {showFilters && (
           <>
@@ -131,6 +140,7 @@ export default function Log(p: Props) {
                   </button>
                 )}
                 <button className="tool" onClick={p.pickAllShown} disabled={!events.length}>Tick all shown</button>
+                <button className="tool" onClick={p.clearPicks} disabled={!p.picked.size}>Clear ticks</button>
               </div>
             )}
           </>

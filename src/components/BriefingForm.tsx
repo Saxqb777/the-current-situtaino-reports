@@ -1,26 +1,31 @@
 "use client";
 
 import { useState } from "react";
+import type { HormuzBundle } from "@/lib/hormuz";
 import type { WatchEvent, ZoneSummary } from "@/lib/types";
 import { SEVERITY_META, utcTime } from "@/lib/ui";
 
 interface Props {
   events: WatchEvent[];
   zones: ZoneSummary[];
+  hz: HormuzBundle | null;
   chartImage(): string | null;
   onDone(): void;
   /** Phone: each picked report gets a remove button, since the Log is not on screen. */
   onRemove?(id: string): void;
+  /** Unticks every report. */
+  onClear?(): void;
   /** Rendered next to the download button (the dialog's Cancel). */
   extraAction?: React.ReactNode;
 }
 
 /** Title, recipient, note and the picked reports, then builds the PDF in the browser. */
-export default function BriefingForm({ events, zones, chartImage, onDone, onRemove, extraAction }: Props) {
+export default function BriefingForm({ events, zones, hz, chartImage, onDone, onRemove, onClear, extraAction }: Props) {
   const [title, setTitle] = useState("Gulf and Red Sea shipping situation");
   const [preparedFor, setPreparedFor] = useState("");
   const [note, setNote] = useState("");
   const [withChart, setWithChart] = useState(true);
+  const [withStrait, setWithStrait] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +48,7 @@ export default function BriefingForm({ events, zones, chartImage, onDone, onRemo
           events={events}
           zones={zones}
           chartImage={withChart ? chartImage() : null}
+          hz={withStrait ? hz : null}
         />,
       ).toBlob();
       const url = URL.createObjectURL(blob);
@@ -77,6 +83,18 @@ export default function BriefingForm({ events, zones, chartImage, onDone, onRemo
           <input type="checkbox" checked={withChart} onChange={(e) => setWithChart(e.target.checked)} />
           Include the chart as it looks now
         </label>
+        {hz?.status && (
+          <label className="check">
+            <input type="checkbox" checked={withStrait} onChange={(e) => setWithStrait(e.target.checked)} />
+            Add a page on the Strait of Hormuz and the ports
+          </label>
+        )}
+        {onClear && events.length > 1 && (
+          <div className="dialog__pickhead">
+            <span>{events.length} reports ticked</span>
+            <button className="tool" onClick={onClear}>Clear all</button>
+          </div>
+        )}
         <ul className="dialog__picked">
           {events.map((e) => (
             <li key={e.id} data-removable={Boolean(onRemove)}>

@@ -292,6 +292,7 @@ a { color: inherit; }
   letter-spacing: 0.18em;
   text-transform: uppercase;
   font-size: 11px;
+  line-height: 1.25;
   color: var(--ink-2);
   white-space: nowrap;
   pointer-events: none;
@@ -300,6 +301,7 @@ a { color: inherit; }
 .port-label {
   font-family: var(--font-body);
   font-size: 11.5px;
+  line-height: 1.3;
   font-weight: 700;
   color: var(--ink);
   white-space: nowrap;
@@ -380,7 +382,9 @@ a { color: inherit; }
 .scrub__bar { flex: 1; min-height: 1px; background: var(--rule); }
 .scrub__bar[data-future="true"] { opacity: 0.25; }
 .scrub__axis { position: absolute; left: 0; right: 0; bottom: 0; height: 12px; font-size: 10px; color: var(--ink-3); }
-.scrub__axis span { position: absolute; transform: translateX(-50%); }
+.scrub__axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+/* The newest day sits at the right edge; keep its date inside the bar. */
+.scrub__axis span:last-child { transform: translateX(-100%); }
 .scrub__range {
   position: absolute; inset: 0 0 12px; width: 100%; margin: 0; background: transparent; appearance: none; -webkit-appearance: none; cursor: ew-resize;
 }
@@ -618,11 +622,23 @@ html:has(.phone), html:has(.phone) body { overflow: hidden; overscroll-behavior:
 /* The compass rose stays on larger screens; on a phone it would cover Suez. */
 .stage .compass { display: none; }
 
-.mapctl {
+/* Controls, time bar and the "back to live" chip stack in the open sea at bottom right, above the sheet. */
+.mapdock {
   position: absolute;
-  right: 18px;
-  top: 18px;
-  z-index: 4;
+  left: 10px;
+  right: 10px;
+  bottom: calc(var(--sheet-h, 0px) + 10px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+  transition: bottom 280ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+.mapdock > * { pointer-events: auto; }
+.mapctl {
+  margin-right: 8px;
   display: grid;
   background: var(--paper);
   border: 1px solid var(--ink);
@@ -630,6 +646,8 @@ html:has(.phone), html:has(.phone) body { overflow: hidden; overscroll-behavior:
 }
 .mapctl button { width: 46px; height: 46px; display: grid; place-items: center; border: 0; border-bottom: 1px solid var(--rule); background: var(--paper); color: var(--ink); }
 .mapctl button:last-child { border-bottom: 0; }
+/* Clear of the map credits button when nothing sits below. */
+.mapctl:last-child { margin-bottom: 34px; }
 .mapctl button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
 
 .stage .flash { width: calc(100% - 20px); grid-template-columns: auto 1fr 44px; gap: 10px; padding: 8px 0 8px 0; z-index: 9; }
@@ -638,15 +656,11 @@ html:has(.phone), html:has(.phone) body { overflow: hidden; overscroll-behavior:
 .stage .flash .card__close { width: 44px; height: 44px; border: 0; }
 
 .timepanel {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: calc(var(--sheet-h, 0px) + 10px);
-  z-index: 5;
+  position: relative;
+  align-self: stretch;
   background: var(--paper);
   border: 1px solid var(--ink);
   box-shadow: var(--shadow);
-  transition: bottom 280ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 .timepanel .scrub { border-top: 0; padding: 10px 12px 8px; grid-template-columns: 1fr auto; gap: 6px 10px; }
 .timepanel .scrub .tool { grid-column: 2; grid-row: 1; height: 40px; margin-right: 50px; }
@@ -664,10 +678,7 @@ html:has(.phone), html:has(.phone) body { overflow: hidden; overscroll-behavior:
   }
 }
 .pastchip {
-  position: absolute;
-  left: 12px;
-  bottom: calc(var(--sheet-h, 0px) + 12px);
-  z-index: 4;
+  align-self: flex-start;
   min-height: 44px;
   padding: 0 12px;
   display: flex;
@@ -677,7 +688,6 @@ html:has(.phone), html:has(.phone) body { overflow: hidden; overscroll-behavior:
   background: var(--paper);
   border: 1px solid var(--magenta);
   box-shadow: var(--shadow);
-  transition: bottom 280ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 .pastchip b { color: var(--magenta); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.7rem; font-family: var(--font-display); font-stretch: 125%; }
 
@@ -785,15 +795,15 @@ html:has(.phone), html:has(.phone) body { overflow: hidden; overscroll-behavior:
   position: relative;
   z-index: 8;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   padding-bottom: env(safe-area-inset-bottom);
   background: var(--paper);
   border-top: 1px solid var(--ink);
 }
-.tabs__tab { position: relative; height: 58px; display: grid; place-items: center; align-content: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--ink-3); }
+.tabs__tab { position: relative; height: 60px; display: grid; place-items: center; align-content: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--ink-3); }
 .tabs__tab[aria-current="page"] { color: var(--ink); }
 .tabs__tab[aria-current="page"]::before { content: ""; position: absolute; top: -1px; left: 20%; right: 20%; height: 3px; background: var(--olive); }
-.tabs__label { font-family: var(--font-display); font-stretch: 112%; font-weight: 700; font-size: 0.68rem; letter-spacing: 0.07em; text-transform: uppercase; }
+.tabs__label { font-family: var(--font-display); font-stretch: 108%; font-weight: 700; font-size: 0.64rem; letter-spacing: 0.06em; text-transform: uppercase; }
 .tabs__badge { position: absolute; top: 5px; left: calc(50% + 7px); min-width: 18px; height: 18px; padding: 0 4px; display: grid; place-items: center; background: var(--magenta); color: #fff; font-size: 0.66rem; font-weight: 600; }
 .tabs__badge[data-kind="briefing"] { background: var(--olive-ink); }
 
@@ -855,3 +865,7 @@ html:has(.phone), html:has(.phone) body { overflow: hidden; overscroll-behavior:
 @media print {
   .app { display: none; }
 }
+
+/* Ticked reports in the briefing builder: a count and a way to untick them all. */
+.dialog__pickhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; font-size: 0.82rem; color: var(--ink-2); }
+.dialog__pickhead .tool { min-height: 36px; }

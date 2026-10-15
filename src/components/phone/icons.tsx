@@ -70,3 +70,31 @@ export const TourIcon = () => (
     <path d="M11 7.5 L13 11 L11 14.5 L9 11 Z" fill="currentColor" strokeWidth={1} strokeLinejoin="miter" />
   </svg>
 );
+
+/** Now: a radar sweep, the watch on the whole picture. */
+export const NowIcon = () => (
+  <svg {...base}>
+    <circle cx="11" cy="11" r="8.5" />
+    <circle cx="11" cy="11" r="4.6" strokeDasharray="1.6 2" strokeWidth={1.2} />
+    <path d="M11 11 L17 5" />
+    <circle cx="11" cy="11" r="1.6" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+/** Hormuz: two headlands and a ship passing between them. */
+export const StraitIcon = () => (
+  <svg {...base}>
+    <path d="M2 3.5h18v2.6c-3.6 0-6 1.2-7.6 3.6c-0.9-1.6-2.4-2.4-4.4-2.4H2z" fill="currentColor" strokeWidth={1} strokeLinejoin="miter" />
+    <path d="M2 18.5h18v-2.4h-4c-2 0-3.5-0.8-4.4-2.4C9.9 15.4 7.4 16.1 2 16.1z" fill="currentColor" strokeWidth={1} strokeLinejoin="miter" />
+    <path d="M3 11.6h13.5" strokeDasharray="2.4 1.8" strokeWidth={1.4} />
+    <path d="M15.6 9.4 L19 11.6 L15.6 13.8" strokeLinejoin="miter" />
+  </svg>
+);
+
+/** Ports: the chart anchor. */
+export const AnchorIcon = () => (
+  <svg {...base} strokeLinecap="round">
+    <circle cx="11" cy="4.6" r="1.9" />
+    <path d="M11 6.5v12.6M7 9.6h8M3.6 13.2c0.6 3.6 3.4 5.8 7.4 5.9c4-0.1 6.8-2.3 7.4-5.9" />
+  </svg>
+);

@@ -29,6 +29,9 @@ export interface Store {
   transitsSince(sinceMs: number): Promise<Record<string, number>>;
   putMeta(patch: Partial<Meta>): Promise<void>;
   meta(): Promise<Meta>;
+  /** A whole JSON document under its own key, such as the latest west-Gulf ship picture. */
+  putDoc(key: string, value: unknown): Promise<void>;
+  doc<T>(key: string): Promise<T | null>;
   prune(keepMs: number): Promise<void>;
 }
 
@@ -40,6 +43,7 @@ class MemoryStore implements Store {
   private vesselMap = new Map<number, TrackedVessel>();
   private transitList: Transit[] = [];
   private metaValue: Meta = { ...EMPTY_META };
+  private docs = new Map<string, unknown>();
   private lock = 0;
 
   async claimRefresh(minAgeMs: number) {
@@ -62,6 +66,8 @@ class MemoryStore implements Store {
   }
   async putMeta(patch: Partial<Meta>) { this.metaValue = { ...this.metaValue, ...patch }; }
   async meta() { return this.metaValue; }
+  async putDoc(key: string, value: unknown) { this.docs.set(key, value); }
+  async doc<T>(key: string) { return (this.docs.get(key) as T) ?? null; }
   async prune(keepMs: number) {
     const cut = Date.now() - keepMs;
     for (const [k, i] of this.itemMap) if (Date.parse(i.publishedAt) < cut) this.itemMap.delete(k);
@@ -181,6 +187,19 @@ class NeonStore implements Store {
   async meta() {
     const rows = await this.q(`select value from meta where key = 'state'`);
     return { ...EMPTY_META, ...((rows[0]?.value as Partial<Meta>) ?? {}) };
+  }
+
+  async putDoc(key: string, value: unknown) {
+    await this.q(
+      `insert into meta (key, value, updated_at) values ($1, $2::jsonb, now())
+       on conflict (key) do update set value = excluded.value, updated_at = now()`,
+      [`doc:${key}`, JSON.stringify(value)],
+    );
+  }
+
+  async doc<T>(key: string) {
+    const rows = await this.q(`select value from meta where key = $1`, [`doc:${key}`]);
+    return (rows[0]?.value as T) ?? null;
   }
 
   async prune(keepMs: number) {

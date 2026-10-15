@@ -2,23 +2,36 @@
 
 import { PORT_BY_ID, ZONE_BY_ID, distanceNm } from "@/lib/geo";
 import type { Selection, VesselLite } from "@/lib/client";
+import type { HormuzBundle } from "@/lib/hormuz";
+import type { ShipDetail } from "@/lib/hooks";
+import { PORT_PORTWATCH, callsBand } from "@/lib/portwatch";
 import type { WatchEvent } from "@/lib/types";
-import { SEVERITY_META, ago, dm, shipGroup, utcTime } from "@/lib/ui";
+import { SEVERITY_META, ago, agoMin, dm, flagName, tonnes, utcTime } from "@/lib/ui";
 import { severityRank } from "@/lib/classify";
+import { portWait } from "@/lib/waits";
+import Congestion from "./Congestion";
 import SeverityMark from "./SeverityMark";
+import { WeekBars } from "./viz/charts";
 
 interface Props {
   selection: Selection;
   events: WatchEvent[];
   vessels: VesselLite[];
-  aisConfigured: boolean;
+  detail: ShipDetail | null;
+  hz: HormuzBundle | null;
   onSelect(sel: Selection): void;
   onClose(): void;
 }
 
-const TYPE_NAME = { tanker: "Tanker", cargo: "Cargo / container", other: "Other" };
+const GROUP_WORD = { tanker: "Tanker", cargo: "Cargo ship", other: "Ship" };
+const SOURCE_WORD = {
+  hormuz: "hormuz.now live feed (CC BY 4.0)",
+  westGulf: "VesselAPI, west Gulf picture taken a few times a day",
+  ais: "aisstream.io",
+};
+const BAND_WORD = { normal: "Near normal", reduced: "Reduced", low: "Hard hit" };
 
-export default function DetailCard({ selection, events, vessels, aisConfigured, onSelect, onClose }: Props) {
+export default function DetailCard({ selection, events, vessels, detail, hz, onSelect, onClose }: Props) {
   if (!selection) return null;
 
   if (selection.kind === "event") {
@@ -55,12 +68,35 @@ export default function DetailCard({ selection, events, vessels, aisConfigured, 
     const portEvents = events.filter((e) => e.ports.includes(port.id));
     const worst = [...portEvents].sort((a, b) => severityRank(b.severity) - severityRank(a.severity))[0];
     const near = vessels.filter((v) => distanceNm(port.position, [v.lon, v.lat]) < 15);
+    const slug = PORT_PORTWATCH[port.id];
+    const pw = slug ? hz?.ports?.ports.find((p) => p.slug === slug) : undefined;
+    const band = pw ? callsBand(pw.pctCalls) : null;
+    const now = Date.now();
+    const wait = portWait(port.id, hz?.congestion, hz?.areas, now);
     return (
       <Card kicker={`${port.country} · ${ZONE_BY_ID[port.zone].name}`} title={port.name} onClose={onClose} mark={worst ? <SeverityMark level={worst.severity} size={28} /> : undefined}>
+        {pw && band && (
+          <div className="pcard" data-band={pw.lowBase ? "small" : band}>
+            <div className="pcard__big">
+              <b className="mono">{Math.round(pw.pctCalls)}%</b>
+              <span>of normal port calls{pw.lowBase ? ", from a small base" : ""}</span>
+            </div>
+            <div className="pcard__band">{pw.lowBase ? "Small base" : BAND_WORD[band]}</div>
+            <dl className="pcard__facts">
+              <div><dt>Calls a day</dt><dd className="mono">{pw.nowCalls.toFixed(1)} <small>was {pw.preCalls.toFixed(1)}</small></dd></div>
+              <div><dt>Exports</dt><dd className="mono">{Math.round(pw.pctExport)}% <small>of normal</small></dd></div>
+              <div><dt>Waiting now</dt><dd className="mono">{wait.live?.waiting ?? pw.liveWaiting}</dd></div>
+            </dl>
+            {pw.weekly.length > 1 && <WeekBars weeks={pw.weekly} reference={pw.preCalls * 7} height={56} />}
+            {pw.note && <p className="pcard__note">{pw.note}</p>}
+            <p className="pcard__src">IMF PortWatch, via hormuz.now · to {pw.latestDate}</p>
+          </div>
+        )}
+        {(wait.days !== null || wait.live) && <Congestion w={wait} now={now} />}
         <dl className="card__grid">
           <dt>Position</dt><dd className="mono">{dm(port.position[1], "lat")} {dm(port.position[0], "lon")}</dd>
           <dt>Type</dt><dd style={{ textTransform: "capitalize" }}>{port.kind}</dd>
-          <dt>Ships within 15 nm</dt><dd className="mono">{aisConfigured ? near.length : "Ship feed not connected"}</dd>
+          <dt>Ships within 15 nm</dt><dd className="mono">{vessels.length ? near.length : "No ship feed here"}</dd>
           <dt>Reports, 7 days</dt><dd className="mono">{portEvents.length}</dd>
         </dl>
         {portEvents.length > 0 && (
@@ -83,10 +119,10 @@ export default function DetailCard({ selection, events, vessels, aisConfigured, 
             <h4>Ships nearby</h4>
             <ul className="card__list">
               {near.slice(0, 8).map((v) => (
-                <li key={v.mmsi}>
-                  <button onClick={() => onSelect({ kind: "vessel", id: v.mmsi })}>
+                <li key={v.id}>
+                  <button onClick={() => onSelect({ kind: "vessel", id: v.id })}>
                     <span className="card__item-title">{v.name}</span>
-                    <div className="card__meta">{TYPE_NAME[shipGroup(v.type)]} · {v.sog.toFixed(1)} kn{v.destination ? ` · to ${v.destination}` : ""}</div>
+                    <div className="card__meta">{v.type || GROUP_WORD[v.group]} · {v.moving ? `${v.sog.toFixed(1)} kn` : "stopped"}{v.destination ? ` · to ${v.destination}` : ""}</div>
                   </button>
                 </li>
               ))}
@@ -97,22 +133,48 @@ export default function DetailCard({ selection, events, vessels, aisConfigured, 
     );
   }
 
-  const v = vessels.find((x) => x.mmsi === selection.id);
+  const v = vessels.find((x) => x.id === selection.id);
   if (!v) return null;
+  const d = detail?.vessel ?? null;
+  const type = d?.type || v.type || GROUP_WORD[v.group];
+  const flag = d?.flagName || flagName(v.flag);
+  const dwt = d?.dwt || v.dwt;
+  const length = d?.length || v.length;
+  const kicker = [v.dark ? "Signal lost" : v.unifeeder ? "Unifeeder" : type, flag].filter(Boolean).join(" · ");
   return (
-    <Card kicker={v.dark ? "Signal lost" : v.unifeeder ? "Unifeeder" : TYPE_NAME[shipGroup(v.type)]} title={v.name} onClose={onClose}>
+    <Card kicker={kicker} title={v.name} onClose={onClose}>
       {v.dark && (
-        <p style={{ marginTop: 0, color: "var(--magenta)" }}>
-          No position for {ago(v.lastSeen).replace(" ago", "")} while at sea. The transponder may be switched off, or the ship is out of receiver range.
+        <p className="card__alert">
+          Stopped sending its position {agoMin(v.ageMin).replace(" ago", "")} ago while at sea. The transponder may be switched off, or the ship is out of receiver range.
         </p>
       )}
+      <div className="shipstats">
+        <div><b className="mono">{v.moving ? v.sog.toFixed(1) : "0"}</b><span>{v.moving ? "knots" : "stopped"}</span></div>
+        <div><b className="mono">{String(Math.round(v.course)).padStart(3, "0")}°</b><span>{v.moving ? "course" : "heading"}</span></div>
+        <div><b className="mono">{length ? `${length}` : "–"}</b><span>metres long</span></div>
+      </div>
       <dl className="card__grid">
-        <dt>MMSI</dt><dd className="mono">{v.mmsi}</dd>
+        {d?.sizeClass && <><dt>Size class</dt><dd>{d.sizeClass}</dd></>}
+        {dwt > 0 && <><dt>Deadweight</dt><dd className="mono">{tonnes(dwt)}</dd></>}
+        <dt>Destination</dt><dd>{(d?.destination || v.destination) || "Not given"}</dd>
         <dt>Position</dt><dd className="mono">{dm(v.lat, "lat")} {dm(v.lon, "lon")}</dd>
-        <dt>Course / speed</dt><dd className="mono">{String(Math.round(v.course)).padStart(3, "0")}° · {v.sog.toFixed(1)} kn</dd>
-        <dt>Destination</dt><dd>{v.destination || "Not given"}</dd>
-        <dt>Last report</dt><dd className="mono">{utcTime(v.lastSeen)} UTC · {ago(v.lastSeen)}</dd>
+        <dt>Last report</dt><dd className="mono">{agoMin(v.ageMin)}</dd>
+        <dt>Source</dt><dd>{SOURCE_WORD[v.source]}</dd>
       </dl>
+      {detail && detail.track.length > 1 && <p className="card__meta">The dashed line on the chart is its track over the last hours.</p>}
+      {detail && detail.crossings.length > 0 && (
+        <div className="card__section">
+          <h4>Hormuz crossings</h4>
+          <ul className="card__list">
+            {detail.crossings.slice(0, 5).map((c) => (
+              <li key={c.id}>
+                <span className="card__item-title">{c.dir === "in" ? "Into the Gulf" : "Out to the Gulf of Oman"}</span>
+                <div className="card__meta mono">{utcTime(new Date(c.t).toISOString())} UTC · {ago(new Date(c.t).toISOString())} · {c.speed.toFixed(1)} kn</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Card>
   );
 }
