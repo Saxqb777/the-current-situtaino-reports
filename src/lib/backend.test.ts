@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AisTracker, DARK_AFTER_MS, isDark } from "./ais";
-import { store } from "./store";
+import { store, uniqueByUrl } from "./store";
+import type { ClassifiedItem } from "./types";
 
 const position = (mmsi: number, lon: number, lat: number, at: string, name = "TEST SHIP") => ({
   MessageType: "PositionReport",
@@ -55,5 +56,14 @@ describe("store without a database", () => {
     await s.putMeta({ lastRefresh: "a" });
     await s.putMeta({ aisConnected: true });
     expect(await s.meta()).toMatchObject({ lastRefresh: "a", aisConnected: true });
+  });
+});
+
+describe("saving reports", () => {
+  it("sends each story once when two feeds return the same link", () => {
+    const item = (url: string, title: string) => ({ url, title } as unknown as ClassifiedItem);
+    const out = uniqueByUrl([item("a", "first"), item("b", "other"), item("a", "second")]);
+    expect(out.map((i) => i.url)).toEqual(["a", "b"]);
+    expect(out[0].title).toBe("second");
   });
 });

@@ -102,13 +102,16 @@ class NeonStore implements Store {
   }
 
   async putItems(items: ClassifiedItem[]) {
-    if (!items.length) return;
-    await this.q(
-      `insert into items (url, published_at, data)
-       select x->>'url', (x->>'publishedAt')::timestamptz, x from jsonb_array_elements($1::jsonb) x
-       on conflict (url) do update set data = excluded.data, published_at = excluded.published_at`,
-      [JSON.stringify(items)],
-    );
+    // The same story often comes back from two feeds; one insert may not touch a row twice.
+    const unique = uniqueByUrl(items);
+    for (let i = 0; i < unique.length; i += 400) {
+      await this.q(
+        `insert into items (url, published_at, data)
+         select x->>'url', (x->>'publishedAt')::timestamptz, x from jsonb_array_elements($1::jsonb) x
+         on conflict (url) do update set data = excluded.data, published_at = excluded.published_at`,
+        [JSON.stringify(unique.slice(i, i + 400))],
+      );
+    }
   }
 
   async items(sinceMs: number) {
@@ -186,6 +189,11 @@ class NeonStore implements Store {
     await this.q(`delete from transits where at < $1`, [cut]);
     await this.q(`delete from vessels where last_seen < now() - interval '24 hours'`);
   }
+}
+
+/** One item per URL, keeping the last one read, as the in-memory store does. */
+export function uniqueByUrl(items: ClassifiedItem[]): ClassifiedItem[] {
+  return [...new Map(items.map((i) => [i.url, i])).values()];
 }
 
 const g = globalThis as unknown as { __slwStore?: Store };
